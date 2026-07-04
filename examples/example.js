@@ -2,14 +2,12 @@
  * Created by Andrew D.Laptev<a.d.laptev@gmail.com> on 1/21/15.
  */
 
-var CAMERA_HOST = '192.168.68.111',
-	USERNAME = 'admin',
-	PASSWORD = '9999',
-	PORT = 80;
-
 var http = require('http'),
-	Cam = require('../lib/onvif').Cam;
+	Cam = require('../lib/onvif').Cam,
+	dotenv = require('dotenv');
 
+	dotenv.config();
+	const {CAMERA_HOST, USERNAME, PASSWORD, PORT} = process.env;
 
 new Cam({
 	hostname: CAMERA_HOST,
