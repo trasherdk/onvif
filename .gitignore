@@ -14,3 +14,4 @@ experiments
 docs
 .nyc_output
 .vscode
+captures/*.pcap
