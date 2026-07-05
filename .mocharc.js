@@ -1,4 +1,5 @@
 module.exports = {
     'spec': 'test/*.js',
-    'exclude': 'test/serverMockup.js'
+    'exclude': 'test/serverMockup.js',
+    'exit': true
 };

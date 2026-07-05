@@ -7,6 +7,7 @@ describe('Discovery', function() {
 		if (process.platform === 'win32') {
 			this.skip('Skipping test on Windows');
 		}
+		require('../test/serverMockup');
 	});
 	it('should discover at least one device (mockup server)', (done) => {
 		onvif.Discovery.probe({timeout: 1000}, (err, cams) => {

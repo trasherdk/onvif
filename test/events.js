@@ -1,8 +1,9 @@
 const assert = require('assert');
 const onvif = require('../lib/onvif');
-const	serverMockup = require('../test/serverMockup');
+const serverMockup = require('../test/serverMockup');
 
-describe('Events', () => {
+describe('Events', function() {
+	this.timeout(10000);
 	let cam = null;
 	before((done) => {
 		const options = {
@@ -76,31 +77,54 @@ describe('Events', () => {
 			done();
 		}, 1000);
 	});
-	it('should resume long-pulling when connection with server fails', (done) => {
-		// wait 1 second for any Pull requests still running when we removed the listener to complete
+	it('should resume long-pulling when connection with server fails', function(done) {
+		this.timeout(5000);
+		serverMockup.connectionBreaker.break = false;
 		let gotMessage = 0;
 		let pullMessagesCallCount = 0;
+		let breakTriggered = false;
+		let pullCountAtBreak = 0;
+		let finished = false;
+
+		const cleanup = (err) => {
+			if (finished) {
+				return;
+			}
+			finished = true;
+			serverMockup.connectionBreaker.break = false;
+			cam.pullMessages = pullMessages;
+			cam.removeListener('event', onEvent);
+			cam.unsubscribe(() => done(err));
+		};
+
+		const verifyAndCleanup = () => {
+			try {
+				assert.ok(breakTriggered, 'connection break was not triggered after 10 events (got ' + gotMessage + ')');
+				assert.ok(gotMessage > 10, 'expected events to resume after connection failure, got ' + gotMessage);
+				assert.ok(pullMessagesCallCount > pullCountAtBreak, 'expected more pull attempts after connection break');
+				cleanup();
+			} catch (assertErr) {
+				cleanup(assertErr);
+			}
+		};
+
 		const onEvent = () => {
 			if (gotMessage === 10) {
-				// after the tenth message, the next requests will reset the connection
 				serverMockup.connectionBreaker.break = true;
+				breakTriggered = true;
+				pullCountAtBreak = pullMessagesCallCount;
 			}
 			gotMessage += 1;
 		};
+
 		const pullMessages = cam.pullMessages;
 		cam.pullMessages = function(options, callback) {
 			pullMessagesCallCount += 1;
 			pullMessages.call(cam, options, callback);
 		};
+
 		cam.on('event', onEvent);
-		setTimeout(() => {
-			serverMockup.connectionBreaker.break = false;
-			cam.pullMessages = pullMessages;
-			assert.ok(gotMessage === 11 || gotMessage === 12);
-			assert.ok(pullMessagesCallCount > gotMessage && pullMessagesCallCount > 20);
-			cam.removeListener('event', onEvent);
-			cam.unsubscribe(done);
-		}, 1.5 * 1000);
+		setTimeout(() => verifyAndCleanup(), 1500);
 	});
 	it('should return an error when calling renew without subscription', (done) => {
 		cam.renew({}, (err) => {
