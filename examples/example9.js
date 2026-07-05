@@ -1,81 +1,106 @@
 /**
  * Created by Roger Hardiman <opensource@rjh.org.uk>
  *
- * Get a Replay URI to reply recordings from a time/date
+ * Get a Replay URI to replay recordings from an NVR or camera with onboard storage.
  *
+ * Requires ONVIF Recording + Replay services (typical on NVRs, rare on budget IPCs).
+ * START/END are placeholders for time-range search (FindRecordings) — not used here.
  */
 
-const IP_ADDRESS = '192.168.26.204',
-	PORT = 80,
-	USERNAME = 'onvifuser',
-	PASSWORD = 'PASS99pass';
+require('dotenv').config();
+const { CAMERA_HOST, USERNAME, PASSWORD, PORT } = process.env;
 
-let START = "2023-02-12T14:50:00Z";
-let END = "2023-02-12T14:51:00Z";
+const START = '2023-02-12T14:50:00Z';
+const END = '2023-02-12T14:51:00Z';
 
 const Cam = require('../lib/onvif').Cam;
 const flow = require('nimble');
 
-// hide error messages
-console.error = function() {};
+console.log('Connecting to ' + CAMERA_HOST + ':' + PORT);
 
-// try each IP address and each Port
 new Cam({
-	hostname: IP_ADDRESS,
+	hostname: CAMERA_HOST,
 	username: USERNAME,
 	password: PASSWORD,
 	port: PORT,
-	timeout: 5000
+	timeout: 10000
 }, function CamFunc(err) {
-	if (err)  {
-		if (err.message) {
-			console.log(err.message);
-		} else {
-			console.log(err);
-		}
-		return;
+	if (err) {
+		console.log(err.message || err);
+		process.exit(1);
 	}
 
 	const camObj = this;
 
 	let gotRecordings = null;
 	let gotReplayStream = null;
+	let recordingsError = null;
+	let replayError = null;
 
-	// Use Nimble to execute each ONVIF function in turn
-	// A more modern approach would be to Promisify the library API and then await on each async function
 	flow.series([
-		function(callback) {
-			camObj.getRecordings(function(err, recordings, xml) {
-				if (!err) {
+		function (callback) {
+			camObj.getRecordings(function (err, recordings) {
+				if (err) {
+					recordingsError = err.message || String(err);
+				} else {
 					gotRecordings = recordings;
 				}
 				callback();
 			});
 		},
-		function(callback) {
-			// Get Recording URI for the first recording on the NVR
-			if (gotRecordings != null) {
-				camObj.getReplayUri({
-					protocol: 'RTSP',
-					recordingToken: gotRecordings[0].recordingToken
-				}, function(err, replayStream, xml) {
-					if (!err) {
-						gotReplayStream = replayStream;
-					}
-					callback();
-				});
-			} else {
-				callback();
+		function (callback) {
+			if (!gotRecordings) {
+				return callback();
 			}
+
+			let items = gotRecordings;
+			if (!Array.isArray(items)) {
+				items = [items];
+			}
+			if (items.length === 0) {
+				return callback();
+			}
+
+			const token = items[0].recordingToken || items[0].$.token;
+			camObj.getReplayUri({
+				protocol: 'RTSP',
+				recordingToken: token
+			}, function (err, replayStream) {
+				if (err) {
+					replayError = err.message || String(err);
+				} else {
+					gotReplayStream = replayStream;
+				}
+				callback();
+			});
 		},
-		function(callback) {
+		function (callback) {
 			console.log('------------------------------');
-			console.log('Host: ' + IP_ADDRESS + ' Port: ' + PORT);
-			console.log('Replay URL: = ' + gotReplayStream.uri);
+			console.log('Host: ' + CAMERA_HOST + ' Port: ' + PORT);
+			console.log('Time window (reference only): ' + START + ' — ' + END);
+
+			if (gotReplayStream && gotReplayStream.uri) {
+				console.log('Replay URL: ' + gotReplayStream.uri);
+			} else if (recordingsError) {
+				console.log('GetRecordings failed: ' + recordingsError);
+				console.log('Recording/replay is not supported via ONVIF on this device.');
+				console.log('An SD card can still record locally — Yoosee/Xiongmai IPCs usually expose playback only through the app (P2P), not Profile G.');
+			} else if (replayError) {
+				console.log('GetReplayUri failed: ' + replayError);
+			} else if (!gotRecordings) {
+				console.log('No recordings returned.');
+			} else {
+				console.log('No replay URI available.');
+			}
+
 			console.log('------------------------------');
 			callback();
-		},
-
-	]); // end flow
-
+		}
+	], function (flowErr) {
+		if (flowErr) {
+			console.log('Setup failed:', flowErr.message || flowErr);
+			process.exit(1);
+		}
+		process.exit(0);
+	});
 });

@@ -11,22 +11,17 @@
  *
  */
 
-var IP_RANGE_START = '192.168.1.1',
-	IP_RANGE_END = '192.168.1.1',
-	PORT_LIST = [80],
-	USERNAME = 'roger',
-	PASSWORD = 'roger1videosoft';
+require('dotenv').config();
+const { CAMERA_HOST, USERNAME, PASSWORD, PORT } = process.env;
 
 var Cam = require('../lib/onvif').Cam;
 var flow = require('nimble');
 
-var ip_list = ['demo.videosoft.live']
-var port_list = [8080];
-//var ip_list = ['127.0.0.1'];
-//var port_list = [8900];
+var ip_list = [CAMERA_HOST];
+var port_list = [PORT];
 
 // hide error messages
-console.error = function() {};
+// console.error = function() {};
 
 // try each IP address and each Port
 ip_list.forEach(function(ip_entry) {

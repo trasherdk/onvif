@@ -1,95 +1,255 @@
 /**
+ * Brute-force scan for ONVIF devices not found by WS-Discovery (example4).
+ *
+ * Probes each IP in a subnet with ONVIF credentials — for cameras that ignore
+ * multicast discovery (common on Yoosee/Xiongmai) or on routed networks.
+ *
+ * Try example4 first. Use this when discovery returns nothing but you know
+ * devices are on the LAN. For a single known IP, use example2 instead.
+ *
  * Created by Roger Hardiman <opensource@rjh.org.uk>
  *
- * Brute force scan of the network looking for ONVIF devices
- * Displays the time and date of each device
- *          the make and model
- *          the default RTSP address
- * This DOES NOT use ONVIF Discovery. This softweare tries each IP address in
- * turn which allows it to work on networks where ONVIF Discovery does not work
- * (eg on Layer 3 routed networks)
- * 
- * EXAMPLE USING PROMISES by convering callbacks into Promises
- * You can do this in NodeJS or using the Bluebird NPM
+ * Usage:
+ *   node examples/example7.js
+ *
+ * Defaults: local /24, port 5000 only. Override with SCAN_RANGE_* in .env.
+ *
+ * Optional .env:
+ *   SCAN_RANGE_START=192.168.1.1
+ *   SCAN_RANGE_END=192.168.1.254
+ *   SCAN_INTERFACE=eth0
+ *   SCAN_PORTS=5000,80
+ *   SCAN_TIMEOUT=2500
+ *   SCAN_INCLUDE_GATEWAY=1    scan .1 and .255 too (default: skip)
+ *   USERNAME=...  PASSWORD=...
  */
 
-var IP_RANGE_START = '192.168.26.200',
-	IP_RANGE_END = '192.168.26.220',
-	PORT_LIST = [80,8081],
-	USERNAME = 'admin',
-	PASSWORD = 'PASS99pass';
+require('dotenv').config();
+const net = require('net');
+const os = require('os');
+const { promisify } = require('util');
+const Cam = require('../lib/onvif').Cam;
 
-var Cam = require('../lib/onvif').Cam;
-const { promisify } = require("util");
+const {
+	USERNAME,
+	PASSWORD,
+	SCAN_RANGE_START,
+	SCAN_RANGE_END,
+	SCAN_PORTS,
+	SCAN_INTERFACE,
+	DISCOVERY_INTERFACE,
+	SCAN_INCLUDE_GATEWAY
+} = process.env;
 
-//var ipList = [];
-var ipList = generateRange(IP_RANGE_START, IP_RANGE_END);
+const TIMEOUT_MS = parseInt(process.env.SCAN_TIMEOUT || '2500', 10);
+const TCP_CHECK_MS = Math.min(800, TIMEOUT_MS);
+const PROBE_DEADLINE_MS = TIMEOUT_MS + 1500;
+const IFACE = SCAN_INTERFACE || DISCOVERY_INTERFACE || '';
+const SKIP_GATEWAY = SCAN_INCLUDE_GATEWAY !== '1' && SCAN_INCLUDE_GATEWAY !== 'true';
+const PORT_LIST = (SCAN_PORTS || '5000')
+	.split(',')
+	.map(function (p) { return parseInt(p.trim(), 10); })
+	.filter(Boolean);
 
-ipList.push("192.168.26.108");
-var portList = PORT_LIST;
+let foundCount = 0;
 
-// hide error messages
-console.error = function(_err) {
-};
+function withDeadline (promise, ms, label) {
+	return Promise.race([
+		promise,
+		new Promise(function (_resolve, reject) {
+			setTimeout(function () {
+				reject(new Error(label || 'probe timeout'));
+			}, ms);
+		})
+	]);
+}
 
-// try each IP address and each Port
-ipList.forEach(function(ipEntry) {
-	portList.forEach(function(portEntry) {
-		console.log(ipEntry + ' ' + portEntry);
+function tcpPortOpen (host, port) {
+	return new Promise(function (resolve) {
+		const socket = net.createConnection({ host: host, port: port });
+		let settled = false;
+		function finish (open) {
+			if (settled) {
+				return;
+			}
+			settled = true;
+			socket.destroy();
+			resolve(open);
+		}
+		socket.setTimeout(TCP_CHECK_MS);
+		socket.on('connect', function () { finish(true); });
+		socket.on('timeout', function () { finish(false); });
+		socket.on('error', function () { finish(false); });
+	});
+}
 
-		new Cam(
-			{
-				hostname: ipEntry,
-				username: USERNAME,
-				password: PASSWORD,
-				port: portEntry,
-				timeout: 5000,
-			},
-			async function CamFunc(err) {
-				if (err) {
-					if (err.message) {console.log(err.message);} else {console.log(err);}
-					return;
-				}
+/**
+ * @returns {{start: string, end: string, label: string}|null}
+ */
+function pickLocalSubnet () {
+	const ifaces = IFACE ? { [IFACE]: os.networkInterfaces()[IFACE] } : os.networkInterfaces();
+	if (IFACE && !ifaces[IFACE]) {
+		console.error('Interface not found: ' + IFACE);
+		return null;
+	}
+	for (const addrs of Object.values(ifaces)) {
+		if (!addrs) {
+			continue;
+		}
+		for (const addr of addrs) {
+			if ((addr.family === 'IPv4' || addr.family === 4) && !addr.internal) {
+				const parts = addr.address.split('.').map(Number);
+				const mask = addr.netmask.split('.').map(Number);
+				const network = parts.map(function (p, i) { return p & mask[i]; });
+				const broadcast = parts.map(function (p, i) { return p | (~mask[i] & 255); });
+				return {
+					start: network.slice(0, 3).join('.') + '.1',
+					end: broadcast.slice(0, 3).join('.') + '.254',
+					label: addr.address + '/' + addr.netmask
+				};
+			}
+		}
+	}
+	return null;
+}
 
-				var camObj = this;
+/**
+ * @param {string} ip
+ * @returns {boolean}
+ */
+function shouldScanIp (ip) {
+	if (!SKIP_GATEWAY) {
+		return true;
+	}
+	const last = parseInt(ip.split('.').pop(), 10);
+	return last !== 1 && last !== 255;
+}
 
-				// Use Promisify that was added to Nodev8
+/**
+ * @returns {{ips: string[], label: string}}
+ */
+function buildScanPlan () {
+	let ips;
+	let label;
+	if (SCAN_RANGE_START && SCAN_RANGE_END) {
+		ips = generateRange(SCAN_RANGE_START, SCAN_RANGE_END);
+		label = SCAN_RANGE_START + ' .. ' + SCAN_RANGE_END;
+	} else {
+		const local = pickLocalSubnet();
+		if (!local) {
+			return { ips: [], label: '' };
+		}
+		ips = generateRange(local.start, local.end);
+		label = 'local subnet ' + local.label + ' (' + local.start + ' .. ' + local.end + ')';
+	}
+	return {
+		ips: ips.filter(shouldScanIp),
+		label: label + (SKIP_GATEWAY ? ' (skipping .1 and .255)' : '')
+	};
+}
 
-				const promiseGetSystemDateAndTime = promisify(camObj.getSystemDateAndTime).bind(camObj);
-				const promiseGetDeviceInformation = promisify(camObj.getDeviceInformation).bind(camObj);
-				const promiseGetProfiles = promisify(camObj.getProfiles).bind(camObj);
-				const promiseGetSnapshotUri = promisify(camObj.getSnapshotUri).bind(camObj);
-				const promiseGetStreamUri = promisify(camObj.getStreamUri).bind(camObj);
+function createCam (ipEntry, portEntry) {
+	return new Cam({
+		hostname: ipEntry,
+		username: USERNAME,
+		password: PASSWORD,
+		port: portEntry,
+		path: '/onvif/device_service',
+		timeout: TIMEOUT_MS,
+		autoconnect: false
+	});
+}
 
-				// Use Promisify to convert ONVIF Library calls into Promises.
-				let gotDate = await promiseGetSystemDateAndTime();
-				let gotInfo = await promiseGetDeviceInformation();
+async function probeHost (ipEntry, portEntry) {
+	if (!(await tcpPortOpen(ipEntry, portEntry))) {
+		return false;
+	}
 
-				let videoResults = "";
-				let profiles = await promiseGetProfiles();
+	let camObj;
+	try {
+		camObj = createCam(ipEntry, portEntry);
+		const getTime = promisify(camObj.getSystemDateAndTime).bind(camObj);
+		const getInfo = promisify(camObj.getDeviceInformation).bind(camObj);
+		const getStream = promisify(camObj.getStreamUri).bind(camObj);
 
-				// GetMoveOptions
-				const promiseimagingGetMoveOptions = promisify(camObj.imagingGetMoveOptions).bind(camObj);
-				
-				let moveOptions = null;
-				try {
-					moveOptions = await promiseimagingGetMoveOptions();
-				} catch {}
+		await withDeadline(getTime(), PROBE_DEADLINE_MS);
+		const gotInfo = await withDeadline(getInfo(), PROBE_DEADLINE_MS);
 
+		let streamUri = '';
+		try {
+			await withDeadline(
+				promisify(camObj.getCapabilities).bind(camObj)(),
+				PROBE_DEADLINE_MS
+			);
+			const stream = await withDeadline(getStream({ protocol: 'RTSP' }), PROBE_DEADLINE_MS);
+			streamUri = stream && stream.uri ? stream.uri : '';
+		} catch (_streamErr) {
+			// profiles/capabilities not required to count as found
+		}
 
-				console.log('------------------------------');
-				console.log('Host: ' + ipEntry + ' Port: ' + portEntry);
-				console.log('Date: = ' + gotDate);
-				console.log('Info: = ' + JSON.stringify(gotInfo));
-				console.log(videoResults);
-				if (moveOptions != null) console.log(moveOptions);
-				else console.log("No Move Options");
-				console.log('------------------------------');
-			});  // end CamFunc
-	}); // foreach
-}); // foreach
+		foundCount += 1;
+		console.log('');
+		console.log('FOUND ONVIF device #' + foundCount);
+		console.log('------------------------------');
+		console.log('Host: ' + ipEntry + '  Port: ' + portEntry);
+		console.log('Info: ' + JSON.stringify(gotInfo));
+		if (streamUri) {
+			console.log('RTSP: ' + streamUri);
+		}
+		console.log('------------------------------');
+		return true;
+	} catch (_err) {
+		return false;
+	}
+}
 
-function generateRange(startIp, endIp) {
+async function main () {
+	if (!USERNAME || !PASSWORD) {
+		console.error('Set USERNAME and PASSWORD in .env');
+		process.exit(1);
+	}
+
+	const plan = buildScanPlan();
+	if (plan.ips.length === 0) {
+		console.error('No scan range. Set SCAN_RANGE_START/SCAN_RANGE_END or connect a LAN interface.');
+		process.exit(1);
+	}
+
+	const total = plan.ips.length * PORT_LIST.length;
+	console.log('Brute-force ONVIF scan (fallback when WS-Discovery finds nothing)');
+	console.log('Range:  ' + plan.label);
+	console.log('Ports:  ' + PORT_LIST.join(', '));
+	console.log('Hosts:  ' + plan.ips.length + '  Probes: ' + total);
+	console.log('Timeout: ' + TIMEOUT_MS + 'ms per step (hard cap ' + PROBE_DEADLINE_MS + 'ms)');
+	console.log('Tip: try example4.js first for WS-Discovery.');
+	console.log('');
+
+	let done = 0;
+	const started = Date.now();
+	for (let h = 0; h < plan.ips.length; h++) {
+		const ipEntry = plan.ips[h];
+		process.stdout.write('[' + (h + 1) + '/' + plan.ips.length + '] ' + ipEntry + '                    \r');
+		for (const portEntry of PORT_LIST) {
+			done += 1;
+			await probeHost(ipEntry, portEntry);
+		}
+	}
+
+	const elapsed = ((Date.now() - started) / 1000).toFixed(1);
+	console.log('');
+	console.log('Scan complete in ' + elapsed + 's. Found ' + foundCount + ' ONVIF device(s).');
+	if (foundCount === 0) {
+		console.log('Nothing answered on ports ' + PORT_LIST.join(', ') + ' with these credentials.');
+		console.log('Check USERNAME/PASSWORD, SCAN_RANGE_*, or try example4.js (WS-Discovery).');
+	}
+}
+
+main().catch(function (err) {
+	console.error(err);
+	process.exit(1);
+});
+
+function generateRange (startIp, endIp) {
 	var startLong = toLong(startIp);
 	var endLong = toLong(endIp);
 	if (startLong > endLong) {
@@ -98,24 +258,21 @@ function generateRange(startIp, endIp) {
 		endLong = tmp;
 	}
 	var rangeArray = [];
-	var i;
-	for (i = startLong; i <= endLong; i++) {
+	for (var i = startLong; i <= endLong; i++) {
 		rangeArray.push(fromLong(i));
 	}
 	return rangeArray;
 }
 
-//toLong taken from NPM package 'ip'
-function toLong(ip) {
+function toLong (ip) {
 	var ipl = 0;
-	ip.split('.').forEach(function(octet) {
+	ip.split('.').forEach(function (octet) {
 		ipl <<= 8;
-		ipl += parseInt(octet);
+		ipl += parseInt(octet, 10);
 	});
 	return ipl >>> 0;
 }
 
-//fromLong taken from NPM package 'ip'
-function fromLong(ipl) {
+function fromLong (ipl) {
 	return (ipl >>> 24) + '.' + ((ipl >> 16) & 255) + '.' + ((ipl >> 8) & 255) + '.' + (ipl & 255);
 }

@@ -17,10 +17,8 @@
 // Some cameras support OSD but only for adding Date/Time and not general text [eg Bosch Flexidome 4000i]
 // Some cameras are buggy and report XML which is not correctly formwatted bit we have to cope with [Chinese XM modules]
 
-let HOSTNAME = '192.168.1.11',
-    PORT = 80,
-    USERNAME = 'onvifuser',
-    PASSWORD = 'PASS99pass';
+require('dotenv').config();
+const { CAMERA_HOST, USERNAME, PASSWORD, PORT } = process.env;
 
 let Cam = require('../lib/onvif').Cam;
 const { promisify } = require("util");
@@ -28,7 +26,7 @@ const { promisify } = require("util");
 console.log('Connecting to the camera');
 
 new Cam({
-    hostname: HOSTNAME,
+    hostname: CAMERA_HOST,
     username: USERNAME,
     password: PASSWORD,
     port: PORT,
@@ -57,78 +55,99 @@ new Cam({
     // Get the 'defaut' Video Source Configuration Token by looking at the Default Media Profile
     let defaultVideoSourceConfigurationToken = camObj.defaultProfile.videoSourceConfiguration.$.token; // or use camObj.activeSource.videoSourceConfigurationToken;
 
-    ////////////////////////////////////
-    // GET DEVICE MAKE/MODEL
-    ////////////////////////////////////
-    const gotInfo = await getDeviceInformationAsync();
-    console.log("Connected to " + JSON.stringify(gotInfo));
-
-    ////////////////////////////////////
-    // GET OSD OPTIONS
-    ////////////////////////////////////
-    let getOptions = {
-        videoSourceConfigurationToken: defaultVideoSourceConfigurationToken
-    }
-    let optionsResult = await getOSDOptionsAsync(getOptions);
-    console.log("Maximum number of OSDs " + JSON.stringify(optionsResult.getOSDOptionsResponse.OSDOptions.maximumNumberOfOSDs.$));
-
-
-    ////////////////////////////////////
-    // GET LIST OF OSDs
-    ////////////////////////////////////
-
-    let existingOSDs = await getOSDsAsync(defaultVideoSourceConfigurationToken);
-
     try {
+        ////////////////////////////////////
+        // GET DEVICE MAKE/MODEL
+        ////////////////////////////////////
+        const gotInfo = await getDeviceInformationAsync();
+        console.log("Connected to " + JSON.stringify(gotInfo));
 
-        console.log("Found " + existingOSDs.getOSDsResponse.OSDs.length + " exising OSDs");
-        for (const osd of existingOSDs.getOSDsResponse.OSDs) {
-
-            let msg = osd.type;
-            if (osd.type == "Text") msg += osd.textString.type;
-
-
-            // Only delete items that are Text and that are not of type DateTime
-            if (osd.type == "Text" && osd.textString.type != "DateAndTime") {
-                ////////////////////////////////////
-                // DELETE OSDs
-                ////////////////////////////////////
-                console.log("Deleteing OSD Token " + osd.$.token);
-                let deleteResult = await deleteOSDAsync(osd.$.token);
-            }
-            else {
-                console.log("Keeping OSD Token " + osd.$.token);
-            }
+        ////////////////////////////////////
+        // GET OSD OPTIONS
+        ////////////////////////////////////
+        let getOptions = {
+            videoSourceConfigurationToken: defaultVideoSourceConfigurationToken
+        };
+        let optionsResult;
+        try {
+            optionsResult = await getOSDOptionsAsync(getOptions);
+        } catch (osdErr) {
+            console.log('GetOSDOptions failed:', osdErr.message || osdErr);
+            console.log('OSD is not supported on this camera (common on budget Yoosee/Xiongmai IPCs).');
+            process.exit(0);
         }
-    } catch { }
+        console.log("Maximum number of OSDs " + JSON.stringify(optionsResult.getOSDOptionsResponse.OSDOptions.maximumNumberOfOSDs.$));
 
 
-
-    ////////////////////////////////////
-    // ADD OSD
-    ////////////////////////////////////
-
-    // The OSD can be added to several different positions.
-    // Loop through all available positions until we managed to add one
-    for (const position of optionsResult.getOSDOptionsResponse.OSDOptions.positionOption) {
-
-        let createOptions = {
-            videoSourceConfigurationToken: defaultVideoSourceConfigurationToken,
-            plaintext: "Hello World",
-            postion: position
+        ////////////////////////////////////
+        // GET LIST OF OSDs
+        ////////////////////////////////////
+        let existingOSDs;
+        try {
+            existingOSDs = await getOSDsAsync(defaultVideoSourceConfigurationToken);
+        } catch (osdErr) {
+            console.log('GetOSDs failed:', osdErr.message || osdErr);
+            console.log('OSD is not supported on this camera (common on budget Yoosee/Xiongmai IPCs).');
+            process.exit(0);
         }
-
-        console.log("Tying to add new OSD to " + position);
 
         try {
-            let createResult = await createOSDAsync(createOptions);
-            console.log("New OSD created with token " + createResult.createOSDResponse.OSDToken);
-            break; // EXIT the For Loop
-        } catch {
-            // go back around the for loop
-        }
-    }
+            console.log("Found " + existingOSDs.getOSDsResponse.OSDs.length + " exising OSDs");
+            for (const osd of existingOSDs.getOSDsResponse.OSDs) {
 
-    console.log("Finished");
+                let msg = osd.type;
+                if (osd.type == "Text") msg += osd.textString.type;
+
+
+                // Only delete items that are Text and that are not of type DateTime
+                if (osd.type == "Text" && osd.textString.type != "DateAndTime") {
+                    ////////////////////////////////////
+                    // DELETE OSDs
+                    ////////////////////////////////////
+                    console.log("Deleteing OSD Token " + osd.$.token);
+                    await deleteOSDAsync(osd.$.token);
+                }
+                else {
+                    console.log("Keeping OSD Token " + osd.$.token);
+                }
+            }
+        } catch { }
+
+
+
+        ////////////////////////////////////
+        // ADD OSD
+        ////////////////////////////////////
+
+        // The OSD can be added to several different positions.
+        // Loop through all available positions until we managed to add one
+        let positionOptions = optionsResult.getOSDOptionsResponse.OSDOptions.positionOption;
+        if (!Array.isArray(positionOptions)) {
+            positionOptions = [positionOptions];
+        }
+        for (const position of positionOptions) {
+
+            let createOptions = {
+                videoSourceConfigurationToken: defaultVideoSourceConfigurationToken,
+                plaintext: "Hello World",
+                position: position
+            };
+
+            console.log("Tying to add new OSD to " + position);
+
+            try {
+                let createResult = await createOSDAsync(createOptions);
+                console.log("New OSD created with token " + createResult.createOSDResponse.OSDToken);
+                break; // EXIT the For Loop
+            } catch {
+                // go back around the for loop
+            }
+        }
+
+        console.log("Finished");
+    } catch (err) {
+        console.log('Error:', err.message || err);
+        process.exit(1);
+    }
 })
 

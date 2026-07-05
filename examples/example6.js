@@ -9,70 +9,77 @@
  *    to send new ONVIF Events to our mini HTTP server.
  *
  * Created by Roger Hardiman <opensource@rjh.org.uk>
- * 
+ *
  * (c) Roger Hardiman, RJH Technical Consultancy Ltd, November 2019, September 2021
  * Licenced under the MIT Open Source Licence
- *
  */
 
-let HOSTNAME = '192.168.1.15',
-	PORT = 80,
-	USERNAME = 'admin',
-	PASSWORD = 'pass';
+require('dotenv').config();
+const os = require('os');
+const { CAMERA_HOST, USERNAME, PASSWORD, PORT, EVENT_RECEIVER_IP, EVENT_RECEIVER_PORT } = process.env;
 
+const EventMethodTypes = { PULL: 'pull', SUBSCRIBE: 'subscribe' };
 
-const EventMethodTypes = { PULL: "pull", SUBSCRIBE: "subscribe" }
-
-let EVENT_RECEIVER_IP_ADDRESS = '192.168.1.70'; // the IP Address and Port for a HTTP Server that the camera will send events to. Change this.
-let EVENT_RECEIVER_PORT = 8086;
-
-// PICK WHICH EVENT METHOD TOUSE
-// let EVENT_MODE = EventMethodTypes.PULL;     // <- PICK ONE
-let EVENT_MODE = EventMethodTypes.SUBSCRIBE;     // <- PICK ONE
-
-
-
-console.log("*******************************************************************************");
-console.log("** This example can switch between PullPoint and Base Subscribe modes");
-if (EVENT_MODE == EventMethodTypes.PULL) {
-	console.log("** The library will poll for events using a WS-Pull Point Subscription");
+/**
+ * IP of THIS machine on the LAN — the camera must be able to reach it.
+ * Only used in SUBSCRIBE mode. Defaults to the first non-loopback IPv4 address,
+ * or set EVENT_RECEIVER_IP in .env (e.g. 192.168.1.81 on asus-cctv, 192.168.1.39 on Windows).
+ */
+function pickReceiverIp () {
+	if (EVENT_RECEIVER_IP) {
+		return EVENT_RECEIVER_IP;
+	}
+	for (const addrs of Object.values(os.networkInterfaces())) {
+		for (const addr of addrs) {
+			if ((addr.family === 'IPv4' || addr.family === 4) && !addr.internal) {
+				return addr.address;
+			}
+		}
+	}
+	return '127.0.0.1';
 }
-if (EVENT_MODE == EventMethodTypes.SUBSCRIBE) {
-	console.log("** The camera will be told to send ONVIF Events to " + EVENT_RECEIVER_IP_ADDRESS + ":" + EVENT_RECEIVER_PORT);
+
+const EVENT_RECEIVER_IP_ADDRESS = pickReceiverIp();
+const EVENT_RECEIVER_PORT_NUM = parseInt(EVENT_RECEIVER_PORT || '8086', 10);
+
+// PICK WHICH EVENT METHOD TO USE
+// let EVENT_MODE = EventMethodTypes.PULL;
+let EVENT_MODE = EventMethodTypes.SUBSCRIBE;
+
+console.log('*******************************************************************************');
+console.log('** This example can switch between PullPoint and Base Subscribe modes');
+if (EVENT_MODE === EventMethodTypes.PULL) {
+	console.log('** The library will poll for events using a WS-Pull Point Subscription');
 }
-console.log("*******************************************************************************");
+if (EVENT_MODE === EventMethodTypes.SUBSCRIBE) {
+	console.log('** The camera will be told to send ONVIF Events to ' +
+		EVENT_RECEIVER_IP_ADDRESS + ':' + EVENT_RECEIVER_PORT_NUM);
+}
+console.log('*******************************************************************************');
 
-
-let Cam = require('../lib/onvif').Cam;
+const Cam = require('../lib/onvif').Cam;
 let cam_obj = null;
-let flow = require('nimble');
-
-let http = require('http');
+const flow = require('nimble');
+const http = require('http');
 let server = null;
 
-if (EVENT_MODE == EventMethodTypes.SUBSCRIBE) {
-	// Create a HTTP Server to receive Events
+if (EVENT_MODE === EventMethodTypes.SUBSCRIBE) {
 	server = http.createServer(function (request, response) {
-		// new HTTP connection received from the ONVIF camera
 		let body = '';
-		request.on('data', chunk => {
+		request.on('data', function (chunk) {
 			body += chunk;
-		})
-		request.on('end', () => {
-			//end of data
-			if (request.method == "POST") {
+		});
+		request.on('end', function () {
+			if (request.method === 'POST') {
 				console.log('HTTP POST Message received on ' + request.url);
-				//console.log(body);
 				console.log('');
-				response.writeHead(200, { "Content-Type": "text\plain" });
-				response.end("received POST request.");
+				response.writeHead(200, { 'Content-Type': 'text/plain' });
+				response.end('received POST request.');
 
-				// Process the event that has been received
 				if (cam_obj != null) {
-					// parseEventXML requires a callback, because the inner SOAP Parser is async and uses callbacks
-					cam_obj.parseEventXML(body, function(err,data) {
+					cam_obj.parseEventXML(body, function (err, data) {
 						if (err) {
-							console.log('Error parsing the XML');
+							console.log('Error parsing the XML:', err.message || err);
 						} else {
 							ReceivedEvent(data, body);
 						}
@@ -80,271 +87,248 @@ if (EVENT_MODE == EventMethodTypes.SUBSCRIBE) {
 				}
 				return;
 			}
-			else {
-				console.log('Unexpected connect to HTTP Server to ' + request.url);
-				response.writeHead(200, { "Content-Type": "text\plain" });
-				response.end("Undefined request .");
-				return;
-			}
-		})
-
+			console.log('Unexpected connect to HTTP Server to ' + request.url);
+			response.writeHead(200, { 'Content-Type': 'text/plain' });
+			response.end('Undefined request.');
+		});
 	});
 
-	server.listen(EVENT_RECEIVER_PORT);
-	console.log("Server running on port " + EVENT_RECEIVER_PORT);
+	server.listen(EVENT_RECEIVER_PORT_NUM);
+	console.log('Server running on port ' + EVENT_RECEIVER_PORT_NUM);
 }
 
-
+function hasEventsSupport (cam) {
+	const cap = cam.capabilities;
+	return !!(cap && cap.events && (cap.events.XAddr || cap.events.WSPullPointSupport));
+}
 
 new Cam({
-	hostname: HOSTNAME,
+	hostname: CAMERA_HOST,
 	username: USERNAME,
 	password: PASSWORD,
 	port: PORT,
 	timeout: 10000,
-	preserveAddress: true   // Enables NAT support and re-writes for PullPointSubscription URL
-}, function CamFunc(err) {
+	preserveAddress: true
+}, function CamFunc (err) {
 	if (err) {
-		console.log(err);
-		return;
+		console.log('Connect failed:', err.message || err);
+		process.exit(1);
 	}
 
 	console.log('Connected to ONVIF Device');
-
 	cam_obj = this;
 
-	let hasEvents = false;
+	cam_obj.on('eventsError', function (eventErr) {
+		console.log('Events error:', eventErr.message || eventErr);
+	});
+
+	let hasEvents = hasEventsSupport(cam_obj);
 	let hasTopics = false;
 
-	// Use Nimble's flow to execute ONVIF commands in sequence
 	flow.series([
 		function (callback) {
-			cam_obj.getDeviceInformation(function (err, info, xml) {
-				if (!err) { console.log('Manufacturer  ' + info.manufacturer); }
-				if (!err) { console.log('Model         ' + info.model); }
-				if (!err) { console.log('Firmware      ' + info.firmwareVersion); }
-				if (!err) { console.log('Serial Number ' + info.serialNumber); }
+			cam_obj.getDeviceInformation(function (err, info) {
+				if (!err && info) {
+					console.log('Manufacturer  ' + info.manufacturer);
+					console.log('Model         ' + info.model);
+					console.log('Firmware      ' + info.firmwareVersion);
+					console.log('Serial Number ' + info.serialNumber);
+				} else if (err) {
+					console.log('GetDeviceInformation failed:', err.message || err);
+				}
 				callback();
 			});
 		},
 		function (callback) {
-			cam_obj.getSystemDateAndTime(function (err, date, xml) {
-				if (!err) { console.log('Device Time   ' + date); }
+			cam_obj.getSystemDateAndTime(function (err, date) {
+				if (!err) {
+					console.log('Device Time   ' + date);
+				}
 				callback();
 			});
-		},
-		function (callback) {
-			cam_obj.getCapabilities(function (err, data, xml) {
-				if (err) {
-					console.log(err);
-				}
-				if (data.events) hasEvents = true;
-
-				/*
-				// Unexpected results trying to parse details of the events capabilities
-
-				if (!err && data.events && data.events.WSPullPointSupport && data.events.WSPullPointSupport == true) {
-					console.log('Camera supports WSPullPoint');
-					hasPullPointEvents = true;
-				} else {
-					console.log('Camera does not show WSPullPoint support, but trying anyway');
-					// Have an Axis cameras that says False to WSPullPointSuppor but supports it anyway
-					hasPullPointEvents = true; // Hack for Axis cameras
-				}
-
-				if (hasPullPointEvents == false) {
-					console.log('This camera/NVT does not support PullPoint Events');
-				}
-				*/
-				callback();
-			})
 		},
 		function (callback) {
 			if (hasEvents) {
-				cam_obj.getEventProperties(function (err, data, xml) {
-					if (err) {
-						console.log(err);
-					} else {
-						// Display the available Topics
-						let parseNode = function (node, topicPath) {
-							// loop over all the child nodes in this node
-							for (const child in node) {
-								if (child == "$") { continue; } else if (child == "messageDescription") {
-									// we have found the details that go with an event
-									// examine the messageDescription
-									let IsProperty = false;
-									let source = '';
-									let data = '';
-									if (node[child].$ && node[child].$.IsProperty) { IsProperty = node[child].$.IsProperty }
-									if (node[child].source) { source = JSON.stringify(node[child].source) }
-									if (node[child].data) { data = JSON.stringify(node[child].data) }
-									console.log('Found Event - ' + topicPath.toUpperCase())
-									//console.log('  IsProperty=' + IsProperty);
-									if (source.length > 0) { console.log('  Source=' + source); }
-									if (data.length > 0) { console.log('  Data=' + data); }
-									hasTopics = true
-									return
-								} else {
-									// decend into the child node, looking for the messageDescription
-									parseNode(node[child], topicPath + '/' + child)
-								}
-							}
-						}
-						parseNode(data.topicSet, '')
-					}
-					console.log('');
-					console.log('');
-					callback()
-				});
+				console.log('Events URI    ' + (cam_obj.uri.events && cam_obj.uri.events.href || '(unknown)'));
 			} else {
-				callback()
+				console.log('Events        not advertised in device capabilities');
 			}
+			callback();
 		},
 		function (callback) {
-			if (hasEvents && hasTopics && EVENT_MODE == EventMethodTypes.SUBSCRIBE) {
-				let uniqueID = 1001; // would increment this for every cam_obj object. It is used in the HTTP address sent to the LISTEN_PORT
+			if (!hasEvents) {
+				return callback();
+			}
+			cam_obj.getEventProperties(function (err, data) {
+				if (err) {
+					console.log('GetEventProperties failed:', err.message || err);
+					hasEvents = false;
+					return callback();
+				}
+				if (!data || !data.topicSet) {
+					console.log('GetEventProperties returned no topic set');
+					return callback();
+				}
 
-				let receveUrl = "http://" + EVENT_RECEIVER_IP_ADDRESS + ":" + EVENT_RECEIVER_PORT + "/events/" + uniqueID
-				cam_obj.subscribe(
-					{
-						url: receveUrl
-					},
-					(err, subscription, xml) => {
-						console.log('Subscribed to events')
+				const parseNode = function (node, topicPath) {
+					for (const child in node) {
+						if (child === '$') {
+							continue;
+						}
+						if (child === 'messageDescription') {
+							let source = '';
+							let dataField = '';
+							if (node[child].source) {
+								source = JSON.stringify(node[child].source);
+							}
+							if (node[child].data) {
+								dataField = JSON.stringify(node[child].data);
+							}
+							console.log('Found Event - ' + topicPath.toUpperCase());
+							if (source.length > 0) {
+								console.log('  Source=' + source);
+							}
+							if (dataField.length > 0) {
+								console.log('  Data=' + dataField);
+							}
+							hasTopics = true;
+							return;
+						}
+						parseNode(node[child], topicPath + '/' + child);
 					}
-				);
-
-				// Events will now be received on the EVENT_RECEIVER HTTP Server
+				};
+				parseNode(data.topicSet, '');
+				console.log('');
+				callback();
+			});
+		},
+		function (callback) {
+			if (!hasEvents || !hasTopics) {
+				if (EVENT_MODE === EventMethodTypes.PULL) {
+					console.log('Pull-point events not started (device has no usable event topics).');
+					console.log('This is common on budget Yoosee/Xiongmai cameras.');
+				}
+				return callback();
 			}
 
-			if (hasEvents && hasTopics && EVENT_MODE == EventMethodTypes.PULL) {
+			if (EVENT_MODE === EventMethodTypes.SUBSCRIBE) {
+				const receiveUrl = 'http://' + EVENT_RECEIVER_IP_ADDRESS + ':' +
+					EVENT_RECEIVER_PORT_NUM + '/events/1001';
+				cam_obj.subscribe({ url: receiveUrl }, function (err) {
+					if (err) {
+						console.log('Subscribe failed:', err.message || err);
+					} else {
+						console.log('Subscribed to events at ' + receiveUrl);
+					}
+					callback();
+				});
+				return;
+			}
 
-				// register for 'event' events. This causes the library to ask the camera for Pull Events
-
-				cam_obj.on('event', (camMessage, xml) => {
+			cam_obj.on('event', function (camMessage, xml) {
+				try {
 					ReceivedEvent(camMessage, xml);
-				})
-			}
-			callback()
+				} catch (parseErr) {
+					console.log('Failed to parse event:', parseErr.message || parseErr);
+				}
+			});
+			console.log('Listening for pull-point events (Ctrl+C to quit)...');
+			callback();
 		}
-	]); // end 'flow'
-}) // end newCam callback
+	], function (flowErr) {
+		if (flowErr) {
+			console.log('Setup failed:', flowErr.message || flowErr);
+			process.exit(1);
+		}
+		if (!hasEvents || !hasTopics || EVENT_MODE !== EventMethodTypes.PULL) {
+			process.exit(0);
+		}
+	});
+});
 
-
-// Code completes here but the applications remains running as there is a OnEvent listener that is active
-
-// UNCOMMENT THIS LINE TO STOP AFTER 5 SECONDS...   setTimeout(()=>{cam_obj.removeAllListeners('event');},5000);
-
-
-
-function stripNamespaces(topic) {
-	// example input :-   tns1:MediaControl/tnsavg:ConfigurationUpdateAudioEncCfg 
-	// Split on '/'
-	// For each part, remove any namespace
-	// Recombine parts that were split with '/'
+function stripNamespaces (topic) {
 	let output = '';
-	let parts = topic.split('/')
+	const parts = topic.split('/');
 	for (let index = 0; index < parts.length; index++) {
-		let stringNoNamespace = parts[index].split(':').pop() // split on :, then return the last item in the array
-		if (output.length == 0) {
-			output += stringNoNamespace
+		const stringNoNamespace = parts[index].split(':').pop();
+		if (output.length === 0) {
+			output += stringNoNamespace;
 		} else {
-			output += '/' + stringNoNamespace
+			output += '/' + stringNoNamespace;
 		}
 	}
-	return output
+	return output;
 }
 
-function ReceivedEvent(camMessage, _xml) {
-	// Extract Event Details
-	// Events have a Topic
-	// Events have (optionally) a Source, a Key and Data fields
-	// The Source,Key and Data fields can be single items or an array of items
-	// The Source,Key and Data fields can be of type SimpleItem or a Complex Item
+function ReceivedEvent (camMessage, _xml) {
+	if (!camMessage || !camMessage.topic || !camMessage.message || !camMessage.message.message) {
+		console.log('WARNING: Unexpected event shape:', JSON.stringify(camMessage).slice(0, 200));
+		return;
+	}
 
-	//    - Topic
-	//    - Message/Message/$
-	//    - Message/Message/Source...
-	//    - Message/Message/Key...
-	//    - Message/Message/Data/SimpleItem/[index]/$/name   (array of items)
-	// OR - Message/Message/Data/SimpleItem/$/name   (single item)
-	//    - Message/Message/Data/SimpleItem/[index]/$/value   (array of items)
-	// OR - Message/Message/Data/SimpleItem/$/value   (single item)
+	let eventTopic = camMessage.topic._;
+	eventTopic = stripNamespaces(eventTopic);
 
-	let eventTopic = camMessage.topic._
-	eventTopic = stripNamespaces(eventTopic)
+	const message = camMessage.message.message;
+	let eventTime = message.$ && message.$.UtcTime;
+	let eventProperty = message.$ && message.$.PropertyOperation;
 
-	let eventTime = camMessage.message.message.$.UtcTime;
-
-	let eventProperty = camMessage.message.message.$.PropertyOperation
-	// Supposed to be Initialized, Deleted or Changed but missing/undefined on the Avigilon 4 channel encoder
-
-	// Only handle simpleItem
-	// Only handle one 'source' item
-	// Ignore the 'key' item  (nothing I own produces it)
-	// Handle all the 'Data' items
-
-	// SOURCE (Name:Value)
-	let sourceName = null
-	let sourceValue = null
-	if (camMessage.message.message.source && camMessage.message.message.source.simpleItem) {
-		if (Array.isArray(camMessage.message.message.source.simpleItem)) {
-			sourceName = camMessage.message.message.source.simpleItem[0].$.Name
-			sourceValue = camMessage.message.message.source.simpleItem[0].$.Value
-			console.log("WARNING: Only processing first Event Source item")
+	let sourceName = null;
+	let sourceValue = null;
+	if (message.source && message.source.simpleItem) {
+		if (Array.isArray(message.source.simpleItem)) {
+			sourceName = message.source.simpleItem[0].$.Name;
+			sourceValue = message.source.simpleItem[0].$.Value;
+			console.log('WARNING: Only processing first Event Source item');
 		} else {
-			sourceName = camMessage.message.message.source.simpleItem.$.Name
-			sourceValue = camMessage.message.message.source.simpleItem.$.Value
+			sourceName = message.source.simpleItem.$.Name;
+			sourceValue = message.source.simpleItem.$.Value;
 		}
-	} else {
-		sourceName = null
-		sourceValue = null
-		console.log("WARNING: Source does not contain a simpleItem")
 	}
 
-	//KEY
-	if (camMessage.message.message.key) {
-		console.log('NOTE: Event has a Key')
+	if (message.key) {
+		console.log('NOTE: Event has a Key');
 	}
 
-	// DATA (Name:Value)
-	if (camMessage.message.message.data && camMessage.message.message.data.simpleItem) {
-		if (Array.isArray(camMessage.message.message.data.simpleItem)) {
-			for (let x = 0; x < camMessage.message.message.data.simpleItem.length; x++) {
-				let dataName = camMessage.message.message.data.simpleItem[x].$.Name
-				let dataValue = camMessage.message.message.data.simpleItem[x].$.Value
-				processEvent(eventTime, eventTopic, eventProperty, sourceName, sourceValue, dataName, dataValue)
+	if (message.data && message.data.simpleItem) {
+		if (Array.isArray(message.data.simpleItem)) {
+			for (let x = 0; x < message.data.simpleItem.length; x++) {
+				processEvent(
+					eventTime, eventTopic, eventProperty, sourceName, sourceValue,
+					message.data.simpleItem[x].$.Name,
+					message.data.simpleItem[x].$.Value
+				);
 			}
 		} else {
-			let dataName = camMessage.message.message.data.simpleItem.$.Name
-			let dataValue = camMessage.message.message.data.simpleItem.$.Value
-			processEvent(eventTime, eventTopic, eventProperty, sourceName, sourceValue, dataName, dataValue)
+			processEvent(
+				eventTime, eventTopic, eventProperty, sourceName, sourceValue,
+				message.data.simpleItem.$.Name,
+				message.data.simpleItem.$.Value
+			);
 		}
-	} else if (camMessage.message.message.data && camMessage.message.message.data.elementItem) {
-		console.log("WARNING: Data contain an elementItem")
-		let dataName = 'elementItem'
-		let dataValue = JSON.stringify(camMessage.message.message.data.elementItem)
-		processEvent(eventTime, eventTopic, eventProperty, sourceName, sourceValue, dataName, dataValue)
+	} else if (message.data && message.data.elementItem) {
+		console.log('WARNING: Data contains an elementItem');
+		processEvent(eventTime, eventTopic, eventProperty, sourceName, sourceValue,
+			'elementItem', JSON.stringify(message.data.elementItem));
 	} else {
-		console.log("WARNING: Data does not contain a simpleItem or elementItem")
-		let dataName = null
-		let dataValue = null
-		processEvent(eventTime, eventTopic, eventProperty, sourceName, sourceValue, dataName, dataValue)
+		processEvent(eventTime, eventTopic, eventProperty, sourceName, sourceValue, null, null);
 	}
 }
 
-function processEvent(eventTime, eventTopic, eventProperty, sourceName, sourceValue, dataName, dataValue) {
-	let output = '';
-	output += `EVENT: ${eventTime.toJSON()} ${eventTopic}`
-	if (typeof (eventProperty) !== "undefined") {
-		output += ` PROP:${eventProperty}`
+function processEvent (eventTime, eventTopic, eventProperty, sourceName, sourceValue, dataName, dataValue) {
+	let output = 'EVENT: ';
+	if (eventTime && eventTime.toJSON) {
+		output += eventTime.toJSON() + ' ';
 	}
-	if (typeof (sourceName) !== "undefined" && typeof (sourceValue) !== "undefined") {
-		output += ` SRC:${sourceName}=${sourceValue}`
+	output += eventTopic;
+	if (typeof eventProperty !== 'undefined') {
+		output += ' PROP:' + eventProperty;
 	}
-	if (typeof (dataName) !== "undefined" && typeof (dataValue) !== "undefined") {
-		output += ` DATA:${dataName}=${dataValue}`
+	if (typeof sourceName !== 'undefined' && typeof sourceValue !== 'undefined') {
+		output += ' SRC:' + sourceName + '=' + sourceValue;
 	}
-	console.log(output)
+	if (typeof dataName !== 'undefined' && typeof dataValue !== 'undefined') {
+		output += ' DATA:' + dataName + '=' + dataValue;
+	}
+	console.log(output);
 }
-
