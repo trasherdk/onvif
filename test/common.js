@@ -1,6 +1,6 @@
 import assert from 'assert';
 import { createRequire } from 'module';
-import * as onvif from '../dist/onvif.js';
+import * as onvif from '../src/onvif.ts';
 
 const require = createRequire(import.meta.url);
 const synthTest = !process.env.HOSTNAME;

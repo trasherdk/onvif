@@ -1,5 +1,5 @@
 import assert from 'assert';
-import * as onvif from '../dist/onvif.js';
+import * as onvif from '../src/onvif.ts';
 
 describe('Imaging', () => {
 	let cam = null;

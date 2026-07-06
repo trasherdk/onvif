@@ -11,7 +11,7 @@ export default defineConfig([
 		languageOptions: {
 			globals: {
 				...globals.node,
-				...globals.mocha,
+				...globals.vitest,
 			},
 			ecmaVersion: 2022,
 			sourceType: 'module',

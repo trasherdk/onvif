@@ -1,15 +1,13 @@
 import assert from 'assert';
 import { createRequire } from 'module';
-import * as onvif from '../dist/onvif.js';
+import * as onvif from '../src/onvif.ts';
 
 const require = createRequire(import.meta.url);
 
-describe('Discovery', function() {
-	this.timeout(10000);
+const describeDiscovery = process.platform === 'win32' ? describe.skip : describe;
+
+describeDiscovery('Discovery', () => {
 	before(() => {
-		if (process.platform === 'win32') {
-			this.skip('Skipping test on Windows');
-		}
 		require('../test/serverMockup.cjs');
 	});
 	it('should discover at least one device (mockup server)', (done) => {

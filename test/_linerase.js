@@ -1,6 +1,6 @@
 import assert from 'assert';
 import { parseString } from 'xml2js';
-import { linerase, splitArgs } from '../dist/utils.js';
+import { linerase, splitArgs } from '../src/utils.ts';
 
 describe('Linerase function', () => {
 	it('should handle tag', (done) => {

@@ -1,12 +1,11 @@
 import assert from 'assert';
 import { createRequire } from 'module';
-import * as onvif from '../dist/onvif.js';
+import * as onvif from '../src/onvif.ts';
 
 const require = createRequire(import.meta.url);
 const serverMockup = require('../test/serverMockup.cjs');
 
-describe('Events', function() {
-	this.timeout(10000);
+describe('Events', () => {
 	let cam = null;
 	before((done) => {
 		const options = {
@@ -80,8 +79,7 @@ describe('Events', function() {
 			done();
 		}, 1000);
 	});
-	it('should resume long-pulling when connection with server fails', function(done) {
-		this.timeout(5000);
+	it('should resume long-pulling when connection with server fails', { timeout: 5000 }, function(done) {
 		serverMockup.connectionBreaker.break = false;
 		let gotMessage = 0;
 		let pullMessagesCallCount = 0;
