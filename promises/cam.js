@@ -1,10 +1,9 @@
-const { Cam } = require('../lib/cam');
+import { Cam } from '../dist/cam.js';
 
 const promisifiedMethods = [];
 
 for (const fun in Cam.prototype) {
-	// eslint-disable-next-line no-prototype-builtins
-	if (Cam.prototype.hasOwnProperty(fun)) {
+	if (Object.prototype.hasOwnProperty.call(Cam.prototype, fun)) {
 		promisifiedMethods.push(fun);
 	}
 }
@@ -48,7 +47,4 @@ function promisify(target, name) {
 	return method;
 }
 
-module.exports = {
-	Cam: CamPromise,
-	promisifiedMethods
-};
+export { CamPromise as Cam, promisifiedMethods };

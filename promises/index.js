@@ -1,4 +1,2 @@
-module.exports = {
-	Cam: require('./cam').Cam,
-	Discovery: require('./discovery').Discovery
-};
+export { Cam } from './cam.js';
+export { Discovery } from './discovery.js';

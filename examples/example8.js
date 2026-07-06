@@ -17,11 +17,11 @@
 // Some cameras support OSD but only for adding Date/Time and not general text [eg Bosch Flexidome 4000i]
 // Some cameras are buggy and report XML which is not correctly formwatted bit we have to cope with [Chinese XM modules]
 
-require('dotenv').config();
-const { CAMERA_HOST, USERNAME, PASSWORD, PORT } = process.env;
+import 'dotenv/config';
+import { Cam } from '../dist/onvif.js';
+import { promisify } from 'util';
 
-let Cam = require('../lib/onvif').Cam;
-const { promisify } = require("util");
+const { CAMERA_HOST, USERNAME, PASSWORD, PORT } = process.env;
 
 console.log('Connecting to the camera');
 

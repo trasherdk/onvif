@@ -1,0 +1,385 @@
+/**
+ * @namespace discovery
+ * @description Discovery module
+ * @author Andrew D.Laptev <a.d.laptev@gmail.com>
+ * @licence MIT
+ */
+
+import { createSocket } from 'dgram';
+import { EventEmitter } from 'events';
+import os from 'os';
+import { Cam } from './cam.js';
+import { guid, linerase, parseSOAPString } from './utils.js';
+
+/**
+ * @param {{family: string|number}} address
+ * @returns {boolean}
+ */
+function isIPv4(address) {
+	return address.family === 'IPv4' || address.family === 4;
+}
+
+/**
+ * @param {string} ip
+ * @param {string} netmask
+ * @returns {string}
+ */
+function subnetBroadcast(ip, netmask) {
+	let ipParts = ip.split('.').map(Number);
+	let maskParts = netmask.split('.').map(Number);
+	return ipParts.map(function(part, i) {
+		return part | (~maskParts[i] & 255);
+	}).join('.');
+}
+
+/**
+ * @param {string} ip
+ * @returns {number}
+ */
+function ipToLong(ip) {
+	let parts = ip.split('.').map(Number);
+	return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+}
+
+/**
+ * @param {number} value
+ * @returns {string}
+ */
+function longToIp(value) {
+	return [
+		(value >>> 24) & 255,
+		(value >>> 16) & 255,
+		(value >>> 8) & 255,
+		value & 255
+	].join('.');
+}
+
+/**
+ * Host addresses on the same subnet as ip/netmask (excludes network and broadcast).
+ * @param {string} ip
+ * @param {string} netmask
+ * @returns {string[]}
+ */
+function ipsInSubnet(ip, netmask) {
+	let network = ipToLong(ip) & ipToLong(netmask);
+	let broadcast = network | (~ipToLong(netmask) >>> 0);
+	let hosts = [];
+	for (let host = network + 1; host < broadcast; host++) {
+		hosts.push(longToIp(host));
+	}
+	return hosts;
+}
+
+/**
+ * @param {object} data linerase() probeMatches payload
+ * @returns {Array<object>}
+ */
+function probeMatchList(data) {
+	if (!data || !data.probeMatches || !data.probeMatches.probeMatch) {
+		return [];
+	}
+	let matches = data.probeMatches.probeMatch;
+	return Array.isArray(matches) ? matches : [matches];
+}
+
+/**
+ * @param {object} match
+ * @returns {string}
+ */
+function probeMatchXAddrs(match) {
+	return match.XAddrs || match.xAddrs || '';
+}
+
+/**
+ * First non-internal IPv4 interface — used for multicast when no `device` is given.
+ * @returns {{address: string, netmask: string}|null}
+ */
+function pickDefaultIPv4() {
+	let interfaces = os.networkInterfaces();
+	for (let name in interfaces) {
+		if (!Object.prototype.hasOwnProperty.call(interfaces, name)) {
+			continue;
+		}
+		for (let i = 0; i < interfaces[name].length; i++) {
+			let address = interfaces[name][i];
+			if (isIPv4(address) && !address.internal) {
+				return { address: address.address, netmask: address.netmask };
+			}
+		}
+	}
+	return null;
+}
+
+/**
+ * Discovery singleton
+ * @type {Object}
+ * @class
+ */
+let Discovery = Object.create(new EventEmitter());
+
+/**
+ * @callback Discovery~ProbeCallback
+ * @property {?Error} error
+ * @property {Array<Cam|object>} found devices
+ */
+
+/**
+ * Discover NVT devices in the subnetwork
+ * @param {object} [options]
+ * @param {number} [options.timeout=5000] timeout in milliseconds for discovery responses
+ * @param {boolean} [options.resolve=true] set to `false` if you want omit creating of Cam objects
+ * @param {string} [options.messageId=GUID] WS-Discovery message id
+ * @param {string} [options.device=defaultroute] Interface to bind on for discovery ex. `eth0`
+ * @param {number} [options.listeningPort=null] client will listen to discovery data device sent
+ * @param {number} [options.bufferSize] buffer size in bytes for discovery responses
+ * @param {string[]} [options.unicastTargets] extra IPs to send Probe to (e.g. known camera IPs)
+ * @param {boolean} [options.subnetBroadcast=true] also Probe the local subnet broadcast address
+ * @param {boolean} [options.subnetScan=false] unicast Probe every host on the bound subnet (/24 typical)
+ * @param {Discovery~ProbeCallback} [callback] timeout callback
+ * @fires Discovery#device
+ * @fires Discovery#error
+ * @example
+ * let onvif = require('onvif');
+ * onvif.Discovery.on('device', function(cam){
+ *   // function would be called as soon as NVT responses
+ *   cam.username = <USERNAME>;
+ *   cam.password = <PASSWORD>;
+ *   cam.connect(console.log);
+ * })
+ * onvif.Discovery.probe();
+ * @example
+ * let onvif = require('onvif');
+ * onvif.Discovery.probe(function(err, cams) {
+ *   // function would be called only after timeout (5 sec by default)
+ *   if (err) { throw err; }
+ *   cams.forEach(function(cam) {
+ *       cam.username = <USERNAME>;
+ *       cam.password = <PASSWORD>;
+ *       cam.connect(console.log);
+ *   });
+ * });
+ */
+Discovery.probe = function(options, callback) {
+	if (callback === undefined) {
+		if (typeof options === 'function') {
+			callback = options;
+			options = {};
+		} else {
+			options = options || {};
+		}
+	}
+	callback = callback || function() {};
+
+	let cams = {},
+		errors = [],
+		messageID = 'urn:uuid:' + (options.messageId || guid()),
+		request = Buffer.from(
+			'<Envelope xmlns="http://www.w3.org/2003/05/soap-envelope" xmlns:dn="http://www.onvif.org/ver10/network/wsdl">' +
+			'<Header>' +
+			'<wsa:MessageID xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing">' + messageID + '</wsa:MessageID>' +
+			'<wsa:To xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing">urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To>' +
+			'<wsa:Action xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing">http://schemas.xmlsoap.org/ws/2005/04/discovery/Probe</wsa:Action>' +
+			'</Header>' +
+			'<Body>' +
+			'<Probe xmlns="http://schemas.xmlsoap.org/ws/2005/04/discovery" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
+			'<Types>dn:NetworkVideoTransmitter</Types>' +
+			'<Scopes />' +
+			'</Probe>' +
+			'</Body>' +
+			'</Envelope>'
+		),
+		socket;
+
+	socket = createSocket({ type: 'udp4', reuseAddr: true });
+
+	socket.on('error', function(err) {
+		Discovery.emit('error', err);
+		callback(err);
+	});
+
+	const httpOK200 = 200;
+	const listener = function(msg, rinfo) {
+		setImmediate(() => {
+			parseSOAPString(msg.toString(), function(err, data, xml, _statusCode) {
+				// TODO check for matching RelatesTo field and messageId
+				if (err || !data[0] || !data[0].probeMatches) {
+					errors.push(err || new Error('Wrong SOAP message from ' + rinfo.address + ':' + rinfo.port, xml));
+					/**
+					 * Indicates error response from device.
+					 * @event Discovery#error
+					 * @type {string}
+					 */
+					Discovery.emit('error', 'Wrong SOAP message from ' + rinfo.address + ':' + rinfo.port, xml);
+				} else {
+					data = linerase(data);
+					probeMatchList(data).forEach(function(match) {
+						let camAddr = match.endpointReference && match.endpointReference.address;
+						let xaddrsRaw = probeMatchXAddrs(match);
+						if (!camAddr || !xaddrsRaw) {
+							return;
+						}
+						// Possible to get multiple matches for the same camera
+						// when your computer has more than one network adapter in the same subnet
+						if (!cams[camAddr]) {
+							let cam;
+							if (options.resolve !== false) {
+								// Create cam with one of the XAddrs uri
+								let camUris = xaddrsRaw.split(' ').filter(Boolean).map(function(url) { return new URL(url); });
+								let camUri = matchXAddr(camUris, rinfo.address);
+								cam = new Cam({
+									hostname: camUri.hostname,
+									port: camUri.port,
+									path: camUri.pathname,
+									urn: camAddr
+								}, () => {});
+								/**
+								 * All available XAddr fields from discovery
+								 * @name xaddrs
+								 * @memberOf Cam#
+								 * @type {Array.<Url>}
+								 */
+								cam.xaddrs = camUris;
+							} else {
+								cam = data;
+							}
+							cams[camAddr] = cam;
+							/**
+							 * Indicates discovered device.
+							 * @event Discovery#device
+							 * @type {Cam|object}
+							 */
+							Discovery.emit('device', cam, rinfo, xml);
+						}
+					});
+				}
+			}, httpOK200);
+		});
+	};
+
+	let bindNetmask = null;
+	let multicastAddress = null;
+
+	// Callback function to bind the socket to the interface
+	const bindingCallback = function(err) {
+		if (err) {
+			Discovery.emit('error', err);
+			callback(err);
+		} else {
+			// set buffer size to the buffer size option in bytes
+			if (options.bufferSize && options.bufferSize > 0) {
+				socket.setRecvBufferSize(options.bufferSize);
+			}
+			if (multicastAddress) {
+				try {
+					socket.setMulticastInterface(multicastAddress);
+				} catch (_multicastErr) {
+					// ignore — not supported on all platforms
+				}
+				try {
+					socket.addMembership('239.255.255.250', multicastAddress);
+				} catch (_memberErr) {
+					try {
+						socket.addMembership('239.255.255.250');
+					} catch (_fallbackMemberErr) {
+						// ignore
+					}
+				}
+			} else {
+				try {
+					socket.addMembership('239.255.255.250');
+				} catch (_memberErr) {
+					// ignore
+				}
+			}
+			try {
+				socket.setMulticastTTL(4);
+			} catch (_ttlErr) {
+				// ignore
+			}
+
+			let targets = [
+				{ host: '239.255.255.250', port: 3702 },
+				{ host: '127.0.0.1', port: 3702 }
+			];
+			if (multicastAddress && bindNetmask && options.subnetBroadcast !== false) {
+				targets.push({ host: subnetBroadcast(multicastAddress, bindNetmask), port: 3702 });
+			}
+			(options.unicastTargets || []).forEach(function(host) {
+				if (host) {
+					targets.push({ host: host, port: 3702 });
+				}
+			});
+			if (options.subnetScan && multicastAddress && bindNetmask) {
+				ipsInSubnet(multicastAddress, bindNetmask).forEach(function(host) {
+					targets.push({ host: host, port: 3702 });
+				});
+			}
+
+			targets.forEach(function(target) {
+				socket.send(request, 0, request.length, target.port, target.host, function(sendErr: NodeJS.ErrnoException | null) {
+					// Subnet broadcast often needs CAP_NET_RAW; ignore permission errors
+					if (sendErr && sendErr.code !== 'EACCES') {
+						Discovery.emit('error', sendErr);
+					}
+				});
+			});
+		}
+	};
+	// If device is specified try to bind to that interface
+	let shouldBind = false;
+	if (options.device) {
+		let interfaces = os.networkInterfaces();
+		// Try to find the interface based on the device name
+		if (options.device in interfaces) {
+			interfaces[options.device].some(function(address) {
+				if (isIPv4(address)) {
+					multicastAddress = address.address;
+					bindNetmask = address.netmask;
+					socket.bind(options.listeningPort || undefined, address.address, bindingCallback);
+					shouldBind = true;
+					return true;
+				}
+			});
+		}
+	}
+
+	if (!multicastAddress) {
+		let picked = pickDefaultIPv4();
+		if (picked) {
+			multicastAddress = picked.address;
+			bindNetmask = picked.netmask;
+		}
+	}
+
+	// If no device is specified, bind to the default port
+	if (!shouldBind) {
+		if (options.listeningPort) {
+			socket.bind(options.listeningPort, bindingCallback);
+		} else {
+			socket.bind(bindingCallback);
+		}
+	}
+
+	socket.on('message', listener);
+
+	setTimeout(function() {
+		socket.removeListener('message', listener);
+		socket.close();
+		callback(errors.length ? errors : null, Object.keys(cams).map(function(addr) { return cams[addr]; }));
+	}.bind(this), options.timeout || 5000);
+};
+
+/**
+ * Try to find the most suitable record
+ * Now it is simple ip match
+ * @param {Array<Url>} xaddrs
+ * @param {string} address
+ */
+function matchXAddr(xaddrs, address) {
+	let ipMatch = xaddrs.filter(function(xaddr) {
+		return xaddr.hostname === address;
+	});
+	return ipMatch[0] || xaddrs[0];
+}
+
+export { Discovery };

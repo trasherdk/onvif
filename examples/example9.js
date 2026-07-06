@@ -7,14 +7,13 @@
  * START/END are placeholders for time-range search (FindRecordings) — not used here.
  */
 
-require('dotenv').config();
-const { CAMERA_HOST, USERNAME, PASSWORD, PORT } = process.env;
+import 'dotenv/config';
+import { Cam } from '../dist/onvif.js';
+import flow from 'nimble';
 
+const { CAMERA_HOST, USERNAME, PASSWORD, PORT } = process.env;
 const START = '2023-02-12T14:50:00Z';
 const END = '2023-02-12T14:51:00Z';
-
-const Cam = require('../lib/onvif').Cam;
-const flow = require('nimble');
 
 console.log('Connecting to ' + CAMERA_HOST + ':' + PORT);
 

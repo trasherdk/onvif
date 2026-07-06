@@ -1,5 +1,8 @@
-const assert = require('assert');
-const onvif = require('../lib/onvif');
+import assert from 'assert';
+import { createRequire } from 'module';
+import * as onvif from '../dist/onvif.js';
+
+const require = createRequire(import.meta.url);
 
 describe('Discovery', function() {
 	this.timeout(10000);
@@ -7,7 +10,7 @@ describe('Discovery', function() {
 		if (process.platform === 'win32') {
 			this.skip('Skipping test on Windows');
 		}
-		require('../test/serverMockup');
+		require('../test/serverMockup.cjs');
 	});
 	it('should discover at least one device (mockup server)', (done) => {
 		onvif.Discovery.probe({timeout: 1000}, (err, cams) => {

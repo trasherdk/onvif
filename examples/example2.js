@@ -11,11 +11,10 @@
  *
  */
 
-require('dotenv').config();
+import 'dotenv/config';
 const { CAMERA_HOST, USERNAME, PASSWORD, PORT } = process.env;
-
-var Cam = require('../lib/onvif').Cam;
-var flow = require('nimble');
+import { Cam } from '../dist/onvif.js';
+import flow from 'nimble';
 
 var ip_list = [CAMERA_HOST];
 var port_list = [PORT];

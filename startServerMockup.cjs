@@ -10,7 +10,7 @@ process.env['VERBOSE'] = 'true';
 console.log(`Starting Server Mockup at http://${serverHostname}:${serverPort}/onvif/device_service`);
 console.log('BTW you can find full-functional server here: https://www.happytimesoft.com/products/onvif-server/index.html');
 
-let serverMockup = require('./test/serverMockup.js')
+let serverMockup = require('./test/serverMockup.cjs')
 
 // ServerMockup keeps running until you call .close()
 

@@ -2,10 +2,9 @@
  * Created by Andrew D.Laptev<a.d.laptev@gmail.com> on 1/21/15.
  */
 
-var http = require('http'),
-	Cam = require('../lib/onvif').Cam;
-
-require('dotenv').config();
+import http from 'http';
+import { Cam } from '../dist/onvif.js';
+import 'dotenv/config';
 const { CAMERA_HOST, USERNAME, PASSWORD, PORT } = process.env;
 
 new Cam({

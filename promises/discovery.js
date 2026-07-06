@@ -5,20 +5,18 @@
  * @licence MIT
  */
 
-const
-	Cam = require('./cam').Cam,
-	events = require('events'),
-	guid = require('../lib/utils').guid,
-	linerase = require('../lib/utils').linerase,
-	parseSOAPString = require('../lib/utils').parseSOAPString,
-	os = require('os');
+import { EventEmitter } from 'events';
+import dgram from 'dgram';
+import os from 'os';
+import { Cam } from './cam.js';
+import { guid, linerase, parseSOAPString } from '../dist/utils.js';
 
 /**
  * Discovery singleton
  * @type {Object}
  * @class
  */
-var Discovery = Object.create(new events.EventEmitter());
+var Discovery = Object.create(new EventEmitter());
 
 /**
  * Discover NVT devices in the subnetwork
@@ -73,7 +71,7 @@ Discovery.probe = function(options) {
 			'</Body>' +
 			'</Envelope>'
 	);
-	const	socket = require('dgram').createSocket('udp4');
+	const socket = dgram.createSocket('udp4');
 
 	return new Promise((resolve, reject) => {
 		socket.on('error', function(err) {
@@ -178,6 +176,4 @@ function matchXAddr(xaddrs, address) {
 	return ipMatch[0] || xaddrs[0];
 }
 
-module.exports = {
-	Discovery: Discovery
-};
+export { Discovery };

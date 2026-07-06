@@ -1,7 +1,7 @@
-const synthTest = !process.env.HOSTNAME;
+import assert from 'assert';
+import * as onvif from '../dist/onvif.js';
 
-const assert = require('assert');
-const onvif = require('../lib/onvif');
+const synthTest = !process.env.HOSTNAME;
 
 describe('Device', () => {
 	let cam = null;

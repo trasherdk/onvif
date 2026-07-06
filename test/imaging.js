@@ -1,5 +1,5 @@
-const assert = require('assert');
-const onvif = require('../lib/onvif');
+import assert from 'assert';
+import * as onvif from '../dist/onvif.js';
 
 describe('Imaging', () => {
 	let cam = null;

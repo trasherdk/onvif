@@ -18,11 +18,11 @@
  * If you already know the IP, use examples/example2.js instead.
  */
 
-require('dotenv').config();
+import 'dotenv/config';
 
-const os = require('os');
-const onvif = require('../lib/onvif');
-const { linerase, parseSOAPString } = require('../lib/utils');
+import os from 'os';
+import * as onvif from '../dist/onvif.js';
+import { linerase, parseSOAPString } from '../dist/utils.js';
 
 const TIMEOUT_MS = parseInt(process.env.DISCOVERY_TIMEOUT || '8000', 10);
 const CONNECT = process.env.DISCOVERY_CONNECT === '1' || process.env.DISCOVERY_CONNECT === 'true';

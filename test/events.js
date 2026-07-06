@@ -1,6 +1,9 @@
-const assert = require('assert');
-const onvif = require('../lib/onvif');
-const serverMockup = require('../test/serverMockup');
+import assert from 'assert';
+import { createRequire } from 'module';
+import * as onvif from '../dist/onvif.js';
+
+const require = createRequire(import.meta.url);
+const serverMockup = require('../test/serverMockup.cjs');
 
 describe('Events', function() {
 	this.timeout(10000);

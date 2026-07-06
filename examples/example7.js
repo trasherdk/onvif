@@ -24,11 +24,11 @@
  *   USERNAME=...  PASSWORD=...
  */
 
-require('dotenv').config();
-const net = require('net');
-const os = require('os');
-const { promisify } = require('util');
-const Cam = require('../lib/onvif').Cam;
+import 'dotenv/config';
+import net from 'net';
+import os from 'os';
+import { promisify } from 'util';
+import { Cam } from '../dist/onvif.js';
 
 const {
 	USERNAME,

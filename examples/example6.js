@@ -14,8 +14,12 @@
  * Licenced under the MIT Open Source Licence
  */
 
-require('dotenv').config();
-const os = require('os');
+import 'dotenv/config';
+import os from 'os';
+import { Cam } from '../dist/onvif.js';
+import flow from 'nimble';
+import http from 'http';
+
 const { CAMERA_HOST, USERNAME, PASSWORD, PORT, EVENT_RECEIVER_IP, EVENT_RECEIVER_PORT } = process.env;
 
 const EventMethodTypes = { PULL: 'pull', SUBSCRIBE: 'subscribe' };
@@ -57,10 +61,7 @@ if (EVENT_MODE === EventMethodTypes.SUBSCRIBE) {
 }
 console.log('*******************************************************************************');
 
-const Cam = require('../lib/onvif').Cam;
 let cam_obj = null;
-const flow = require('nimble');
-const http = require('http');
 let server = null;
 
 if (EVENT_MODE === EventMethodTypes.SUBSCRIBE) {

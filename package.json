@@ -1,16 +1,34 @@
 {
   "name": "onvif",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "author": "Andrew D.Laptev <a.d.laptev@gmail.com>",
   "description": "Client to ONVIF NVT devices Profile S: cameras",
-  "main": "lib/onvif.js",
+  "type": "module",
+  "main": "./dist/onvif.js",
+  "types": "./dist/onvif.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/onvif.d.ts",
+      "import": "./dist/onvif.js"
+    },
+    "./utils": {
+      "types": "./dist/utils.d.ts",
+      "import": "./dist/utils.js"
+    },
+    "./promises": {
+      "import": "./promises/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "jsdoc": "jsdoc ./lib/*.js --readme ./README.md --destination ./docs",
-    "gh-pages": "jsdoc ./lib/*.js --readme ./README.md --destination ./",
-    "lint": "eslint lib/*.js",
-    "pretest": "npm run lint",
+    "build": "tsc -p tsconfig.build.json",
+    "jsdoc": "jsdoc ./dist/*.js --readme ./README.md --destination ./docs",
+    "lint": "eslint src/**/*.ts",
+    "pretest": "npm run build && npm run lint",
     "test": "nyc mocha",
-    "mockserver": "node startServerMockup.js"
+    "mockserver": "node startServerMockup.cjs"
   },
   "contributors": [
     {
@@ -50,10 +68,12 @@
   ],
   "license": "MIT",
   "engines": {
-    "node": ">=14.0"
+    "node": ">=18.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/node": "^26.1.0",
+    "@types/xml2js": "^0.4.14",
     "dot": "^1.1.3",
     "dotenv": "^17.4.2",
     "eslint": "^10.6.0",
@@ -63,6 +83,8 @@
     "mocha": "^11.7.6",
     "nimble": "^0.0.2",
     "nyc": "^18.0.0",
-    "proxy-agent": "^8.0.2"
+    "proxy-agent": "^8.0.2",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.62.1"
   }
 }

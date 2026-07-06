@@ -3,13 +3,12 @@
  * Edited by Lucas Zanella <me@lucaszanella.com> on 27/08/17.
  * Same as example.json but uses SOCKS5 (useful to access cameras securely through SSH)
  */
-require('dotenv').config();
+import 'dotenv/config';
+import { ProxyAgent } from 'proxy-agent';
+import http from 'http';
+import { Cam } from '../dist/onvif.js';
+
 const { CAMERA_HOST, USERNAME, PASSWORD, PORT, PROXY_URI = 'socks5://localhost:1234' } = process.env;
-
-const { ProxyAgent } = require('proxy-agent');
-
-var http = require('http'),
-	Cam = require('../lib/onvif').Cam;
 
 new Cam({
 	hostname: CAMERA_HOST,

@@ -36,15 +36,15 @@
  * q             Quit (also Ctrl-C)
  */
 
-require('dotenv').config();
+import 'dotenv/config';
+import http from 'http';
+import { Cam } from '../dist/onvif.js';
+import keypress from 'keypress';
+
 const { CAMERA_HOST, USERNAME, PASSWORD, PORT } = process.env;
 
 var MOVE_DURATION_MS = 1000;
 var MOVE_RETRY_MS = 200;
-
-var http = require('http');
-var Cam = require('../lib/onvif').Cam;
-var keypress = require('keypress');
 
 new Cam({
 	hostname: CAMERA_HOST,

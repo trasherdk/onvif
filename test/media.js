@@ -1,10 +1,12 @@
-const synthTest = !process.env.HOSTNAME;
+import assert from 'assert';
+import { createRequire } from 'module';
+import * as onvif from '../dist/onvif.js';
 
-const assert = require('assert');
-const onvif = require('../lib/onvif');
+const require = createRequire(import.meta.url);
+const synthTest = !process.env.HOSTNAME;
 let serverMockup;
 if (synthTest) {
-	serverMockup = require('../test/serverMockup');
+	serverMockup = require('../test/serverMockup.cjs');
 }
 
 describe('Media', () => {

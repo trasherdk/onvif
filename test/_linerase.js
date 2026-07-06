@@ -1,7 +1,6 @@
-const linerase = require('../lib/utils').linerase;
-const splitArgs = require('../lib/utils').splitArgs;
-const assert = require('assert');
-const parseString = require('xml2js').parseString;
+import assert from 'assert';
+import { parseString } from 'xml2js';
+import { linerase, splitArgs } from '../dist/utils.js';
 
 describe('Linerase function', () => {
 	it('should handle tag', (done) => {

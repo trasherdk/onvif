@@ -7,9 +7,9 @@
  *   node scripts/capture-onvif-baseline.js
  */
 
-require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
-const http = require('http');
-const { Cam } = require('../lib/onvif');
+import 'dotenv/config';
+import http from 'http';
+import { Cam } from '../dist/onvif.js';
 
 const host = process.env.CAMERA_HOST || '192.168.1.34';
 const port = Number(process.env.PORT) || 5000;

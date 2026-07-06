@@ -6,6 +6,7 @@ pnpm-lock.yaml
 logs
 *.log
 coverage
+dist
 node_modules
 .idea/
 test.js
