@@ -8,13 +8,10 @@ export default defineConfig({
 		exclude: ['test/serverMockup.cjs', 'test/vitest.setup.js'],
 		testTimeout: 10_000,
 		hookTimeout: 10_000,
+		// Serial run + shared process so the HTTP mock on :10101 stays up for all files.
 		fileParallelism: false,
-		pool: 'forks',
-		poolOptions: {
-			forks: {
-				singleFork: true,
-			},
-		},
+		maxWorkers: 1,
+		isolate: false,
 		setupFiles: ['./test/vitest.setup.js'],
 		coverage: {
 			provider: 'v8',
