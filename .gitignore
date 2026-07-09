@@ -12,7 +12,8 @@ node_modules
 test.js
 cam_tests
 experiments
-docs
+docs/api
 .nyc_output
 .vscode
 captures/*.pcap
+scripts/__pycache__/

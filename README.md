@@ -1,6 +1,5 @@
 # ONVIF
 
-[![Coverage Status](https://img.shields.io/coveralls/agsh/onvif.svg)](https://coveralls.io/r/agsh/onvif?branch=master)
 [![NPM version](https://img.shields.io/npm/v/onvif.svg)](https://www.npmjs.com/package/onvif)
 
 ONVIF Client protocol Profile S (Live Streaming) and Profile G (Replay) Node.js implementation.
@@ -43,8 +42,9 @@ To test with the real device, set appropriate environment variables `HOSTNAME`, 
 tests.
 
 ### Documentation
-To build jsdoc for the library with default theme run `npm run jsdoc`. Otherwise use `jsdoc` with sources from
-`./lib/*.js`
+Run `pnpm build` then `pnpm run jsdoc` to generate API docs under `./docs/api` from `./dist/*.js`.
+
+Camera conformance notes, buying guide, and packet-capture analysis live under [`docs/`](./docs/).
 
 ## Quick example
 
