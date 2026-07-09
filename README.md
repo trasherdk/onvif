@@ -38,8 +38,7 @@ In the library directory run `npm test`
 
 By default the tests use a mockup server to generate ONVIF replies.
 
-To test with the real device, set appropriate environment variables `HOSTNAME`, `USERNAME`, `PASSWORD`, `PORT` and run
-tests.
+To test with the real device, set `CAMERA_HOST`, `USERNAME`, `PASSWORD`, and `PORT` (see `.env.example`) and run tests.
 
 ### Documentation
 Run `pnpm build` then `pnpm run jsdoc` to generate API docs under `./docs/api` from `./dist/*.js`.

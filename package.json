@@ -26,7 +26,8 @@
     "build": "tsc -p tsconfig.build.json",
     "jsdoc": "jsdoc ./dist/*.js --readme ./README.md --destination ./docs/api",
     "lint": "eslint src/**/*.ts",
-    "test": "eslint src/**/*.ts && pnpm build && vitest run --coverage",
+    "test": "pnpm build && vitest run",
+    "coverage": "eslint src/**/*.ts && pnpm build && vitest run --coverage",
     "test:watch": "vitest",
     "examples:smoke": "pnpm build && node scripts/smoke-examples.js",
     "mockserver": "node startServerMockup.cjs"

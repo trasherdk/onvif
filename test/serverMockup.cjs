@@ -8,11 +8,14 @@ const reBody = /<s:Body xmlns:xsi="http:\/\/www.w3.org\/2001\/XMLSchema-instance
 const reCommand = /<(\S*) /;
 const reNS = /xmlns="http:\/\/www.onvif.org\/\S*\/(\S*)\/wsdl"/;
 const __xmldir = __dirname + '/serverMockup/';
-const conf = {
-	port: parseInt(process.env.PORT) || 10101, // server port
-	hostname: process.env.HOSTNAME || 'localhost',
-	pullPointUrl: '/onvif/subscription?Idx=6',
-};
+if (!global.__onvifServerMockupConf) {
+	global.__onvifServerMockupConf = {
+		port: parseInt(process.env.PORT) || 10101, // server port
+		hostname: process.env.CAMERA_HOST || 'localhost',
+		pullPointUrl: '/onvif/subscription?Idx=6',
+	};
+}
+const conf = global.__onvifServerMockupConf;
 
 const verbose = process.env.VERBOSE || false;
 const log = (...msgs) => {
@@ -70,7 +73,7 @@ const listener = (req, res) => {
 			res.destroy();
 			return;
 		}
-		res.end(template(fs.readFileSync(fileName))(conf));
+		res.end(template(fs.readFileSync(fileName))(global.__onvifServerMockupConf));
 	});
 };
 

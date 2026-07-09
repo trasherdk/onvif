@@ -1,446 +1,368 @@
-import assert from 'assert';
-import { createRequire } from 'module';
-import * as onvif from '../src/onvif.ts';
-
-const require = createRequire(import.meta.url);
-const synthTest = !process.env.HOSTNAME;
-let serverMockup;
-if (synthTest) {
-	serverMockup = require('../test/serverMockup.cjs');
-}
+import { describe, it, beforeAll, expect } from 'vitest';
+import {
+	createCam,
+	invoke,
+	mockServer,
+	onvif,
+	sleep,
+	synthTest,
+} from './helpers.js';
 
 describe('Common functions', () => {
-	let cam = null;
-	before(done => {
-		const options = {
-			hostname: process.env.HOSTNAME || 'localhost',
-			username: process.env.USERNAME || 'admin',
-			password: process.env.PASSWORD || '9999',
-			port: process.env.PORT ? parseInt(process.env.PORT) : 10101,
-		};
-		cam = new onvif.Cam(options, done);
+	/** @type {import('../src/onvif.ts').Cam} */
+	let cam;
+
+	beforeAll(async () => {
+		cam = await createCam();
 	});
 
 	describe('default params', () => {
-		it('should set default port and path when no one is specified', (done) => {
+		it('should set default port and path when no one is specified', () => {
 			const defaultCam = new onvif.Cam({});
-			assert.strictEqual(defaultCam.port, 80);
-			assert.strictEqual(defaultCam.path, '/onvif/device_service');
-			done();
+			expect(defaultCam.port).toBe(80);
+			expect(defaultCam.path).toBe('/onvif/device_service');
 		});
 	});
 
 	describe('default autoconnect', () => {
-		it('should connect automatically', (done) => {
-			const callbackFunction = () => done();
-			new onvif.Cam({}, callbackFunction);
+		it('should connect automatically', async () => {
+			await new Promise((resolve) => {
+				new onvif.Cam({}, () => resolve());
+			});
 		});
 	});
 
 	describe('autoconnect disabled', () => {
-		it('should not connect automatically', (done) => {
-			const options = {
-				autoconnect: false,
-				timeout: 0
-			};
-			new onvif.Cam(options, assert.fail);
-			setTimeout(done, 100);
+		it('should not connect automatically', async () => {
+			let called = false;
+			new onvif.Cam({ autoconnect: false, timeout: 0 }, () => {
+				called = true;
+			});
+			await sleep(100);
+			expect(called).toBe(false);
 		});
 	});
 
 	describe('_request', () => {
-		it('brokes when no arguments are passed', (done) => {
-			assert.throws(() => cam._request());
-			done();
+		it('brokes when no arguments are passed', () => {
+			expect(() => cam._request()).toThrow();
 		});
-		it('brokes when no callback is passed', (done) => {
-			assert.throws(() => cam._request({}));
-			done();
+
+		it('brokes when no callback is passed', () => {
+			expect(() => cam._request({})).toThrow();
 		});
-		it('brokes when no options.body is passed', (done) => {
-			assert.throws(() => cam._request({}, () => {}));
-			done();
+
+		it('brokes when no options.body is passed', () => {
+			expect(() => cam._request({}, () => {})).toThrow();
 		});
-		it('should return an error message when request is bad', (done) => {
-			cam._request({body: 'test'}, (err) => {
-				assert.notStrictEqual(err, null);
-				done();
-			});
+
+		it('should return an error message when request is bad', async () => {
+			await expect(invoke(cam._request.bind(cam), { body: 'test' })).rejects.toBeTruthy();
 		});
-		it('should return an error message when the network is unreachible', (done) => {
+
+		it('should return an error message when the network is unreachible', async () => {
 			const host = cam.hostname;
 			cam.hostname = 'wrong hostname';
-			cam._request({body: 'test'}, (err) => {
-				assert.notStrictEqual(err, null);
-				cam.hostname = host;
-				done();
-			});
+			await expect(invoke(cam._request.bind(cam), { body: 'test' })).rejects.toBeTruthy();
+			cam.hostname = host;
 		});
-		it('should return an error message when the server request times out', (done) => {
+
+		it('should return an error message when the server request times out', async () => {
 			const host = cam.hostname;
 			const oldTimeout = cam.timeout;
 			cam.hostname = '10.255.255.1';
 			cam.timeout = 500;
-			cam._request({body: 'test'}, (err) => {
-				assert.notStrictEqual(err, null);
-				cam.timeout = oldTimeout;
-				cam.hostname = host;
-				done();
-			});
+			await expect(invoke(cam._request.bind(cam), { body: 'test' })).rejects.toBeTruthy();
+			cam.timeout = oldTimeout;
+			cam.hostname = host;
 		});
-		it('should work nice with the proper request body', (done) => {
-			cam._request({
-				body: '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">' +
+
+		it('should work nice with the proper request body', async () => {
+			await invoke(cam._request.bind(cam), {
+				body:
+					'<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">' +
 					'<s:Body xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">' +
 					'<GetSystemDateAndTime xmlns="http://www.onvif.org/ver10/device/wsdl"/>' +
 					'</s:Body>' +
-					'</s:Envelope>'
-			}
-			, (err) => {
-				assert.strictEqual(err, null);
-				done();
+					'</s:Envelope>',
 			});
 		});
-		it('should handle SOAP Fault as an error (http://www.onvif.org/onvif/ver10/tc/onvif_core_ver10.pdf, pp.45-46)', (done) => {
-			cam._request({body: '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">' +
+
+		it('should handle SOAP Fault as an error (http://www.onvif.org/onvif/ver10/tc/onvif_core_ver10.pdf, pp.45-46)', async () => {
+			await expect(
+				invoke(cam._request.bind(cam), {
+					body:
+						'<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">' +
 						'<s:Body xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">' +
 						'<UnknownCommand xmlns="http://www.onvif.org/ver10/device/wsdl"/>' +
 						'</s:Body>' +
-						'</s:Envelope>'}
-			, (err) => {
-				assert.notStrictEqual(err, null);
-				assert.ok(err instanceof Error);
-				done();
-			});
+						'</s:Envelope>',
+				}),
+			).rejects.toBeInstanceOf(Error);
 		});
 	});
 
 	describe('connect', () => {
-		it('should connect to the cam, fill startup properties', (done) => {
-			cam.connect((err) => {
-				assert.strictEqual(err, null);
-				assert.ok(cam.capabilities || cam.services);
-				if (synthTest) {
-					assert.ok(cam.uri.ptz);
-				}
-				assert.ok(cam.uri.media);
-				assert.ok(cam.videoSources);
-				assert.ok(cam.profiles);
-				assert.ok(cam.defaultProfile);
-				assert.ok(cam.activeSource);
-				done();
-			});
+		it('should connect to the cam, fill startup properties', async () => {
+			await invoke(cam.connect.bind(cam));
+			expect(cam.capabilities || cam.services).toBeTruthy();
+			if (synthTest) {
+				expect(cam.uri.ptz).toBeTruthy();
+			}
+			expect(cam.uri.media).toBeTruthy();
+			expect(cam.videoSources).toBeTruthy();
+			expect(cam.profiles).toBeTruthy();
+			expect(cam.defaultProfile).toBeTruthy();
+			expect(cam.activeSource).toBeTruthy();
 		});
-		it('should return an error when upstart is unfinished', (done) => {
+
+		it('should return an error when upstart is unfinished', async () => {
+			cam.getServices = (_full, cb) => cb(new Error('error'));
 			cam.getCapabilities = (cb) => cb(new Error('error'));
-			cam.connect((err) => {
-				assert.notStrictEqual(err, null);
+			try {
+				await expect(invoke(cam.connect.bind(cam))).rejects.toBeTruthy();
+			} finally {
+				delete cam.getServices;
 				delete cam.getCapabilities;
-				done();
-			});
+			}
 		});
 	});
 
 	describe('getSystemDateAndTime', () => {
-		it('should return valid date', (done) => {
-			cam.getSystemDateAndTime((err, data) => {
-				assert.strictEqual(err, null);
-				assert.ok(data instanceof Date);
-				done();
-			});
+		it('should return valid date', async () => {
+			const data = await invoke(cam.getSystemDateAndTime.bind(cam));
+			expect(data).toBeInstanceOf(Date);
 		});
 	});
 
 	describe('setSystemDateAndTime', () => {
-		it('should throws an error when `dateTimeType` is wrong', (done) => {
-			cam.setSystemDateAndTime({
-				dateTimeType: 'blah'
-			}, (err) => {
-				assert.notStrictEqual(err, null);
-				done();
-			});
+		it('should throws an error when `dateTimeType` is wrong', async () => {
+			await expect(
+				invoke(cam.setSystemDateAndTime.bind(cam), { dateTimeType: 'blah' }),
+			).rejects.toBeTruthy();
 		});
+
 		if (synthTest) {
-			it('should set system date and time', (done) => {
-				cam.setSystemDateAndTime({
+			it('should set system date and time', async () => {
+				const data = await invoke(cam.setSystemDateAndTime.bind(cam), {
 					dateTimeType: 'Manual',
 					dateTime: new Date(),
 					daylightSavings: true,
 					timezone: 'MSK',
-				}, (err, data) => {
-					assert.strictEqual(err, null);
-					assert.ok(data instanceof Date);
-					done();
 				});
+				expect(data).toBeInstanceOf(Date);
 			});
-			it('should return an error when SetSystemDateAndTime message returns error', (done) => {
-				serverMockup.conf.bad = true;
-				cam.setSystemDateAndTime({
-					dateTimeType: 'Manual',
-					dateTime: new Date(),
-					daylightSavings: true,
-					timezone: 'MSK',
-				}, (err) => {
-					assert.notStrictEqual(err, null);
-					delete serverMockup.conf.bad;
-					done();
-				});
+
+			it('should return an error when SetSystemDateAndTime message returns error', async () => {
+				mockServer.conf.bad = true;
+				await expect(
+					invoke(cam.setSystemDateAndTime.bind(cam), {
+						dateTimeType: 'Manual',
+						dateTime: new Date(),
+						daylightSavings: true,
+						timezone: 'MSK',
+					}),
+				).rejects.toBeTruthy();
+				delete mockServer.conf.bad;
 			});
 		}
 	});
 
 	describe('getHostname', () => {
-		it('should return device name', (done) => {
-			cam.getHostname((err, data) => {
-				assert.strictEqual(err, null);
-				assert.ok(typeof data.fromDHCP == 'boolean');
-				done();
-			});
+		it('should return device name', async () => {
+			const data = await invoke(cam.getHostname.bind(cam));
+			expect(typeof data.fromDHCP).toBe('boolean');
 		});
 	});
 
 	describe('getScopes', () => {
-		it('should return device scopes as array when different scopes', (done) => {
-			cam.getScopes((err, data) => {
-				assert.strictEqual(err, null);
-				assert.ok(Array.isArray(data));
-				data.forEach((scope) => {
-					assert.ok(scope.scopeDef);
-					assert.ok(scope.scopeItem);
-				});
-				done();
+		it('should return device scopes as array when different scopes', async () => {
+			const data = await invoke(cam.getScopes.bind(cam));
+			expect(Array.isArray(data)).toBe(true);
+			data.forEach((scope) => {
+				expect(scope.scopeDef).toBeTruthy();
+				expect(scope.scopeItem).toBeTruthy();
 			});
 		});
-		if (synthTest) {
-			it('should return device scopes as array when one scope', (done) => {
-				serverMockup.conf.count = 1;
-				cam.getScopes((err, data) => {
-					assert.strictEqual(err, null);
-					assert.ok(Array.isArray(data));
-					data.forEach((scope) => {
-						assert.ok(scope.scopeDef);
-						assert.ok(scope.scopeItem);
-						delete serverMockup.conf.count;
-						done();
-					});
-				});
-			});
-			it('should return device scopes as array when no scopes', (done) => {
-				serverMockup.conf.count = 0;
-				cam.getScopes((err, data) => {
-					assert.strictEqual(err, null);
-					assert.ok(Array.isArray(data));
-					data.forEach((scope) => {
-						assert.ok(scope.scopeDef);
-						assert.ok(scope.scopeItem);
-						delete serverMockup.conf.count;
 
-					});
-					done();
+		if (synthTest) {
+			it('should return device scopes as array when one scope', async () => {
+				mockServer.conf.count = 1;
+				const data = await invoke(cam.getScopes.bind(cam));
+				expect(Array.isArray(data)).toBe(true);
+				data.forEach((scope) => {
+					expect(scope.scopeDef).toBeTruthy();
+					expect(scope.scopeItem).toBeTruthy();
 				});
+				delete mockServer.conf.count;
+			});
+
+			it('should return device scopes as array when no scopes', async () => {
+				mockServer.conf.count = 0;
+				const data = await invoke(cam.getScopes.bind(cam));
+				expect(Array.isArray(data)).toBe(true);
+				data.forEach((scope) => {
+					expect(scope.scopeDef).toBeTruthy();
+					expect(scope.scopeItem).toBeTruthy();
+				});
+				delete mockServer.conf.count;
 			});
 		}
 	});
 
 	describe('setScopes', () => {
-		it('should set and return device scopes as array', (done) => {
-			cam.setScopes(['onvif://www.onvif.org/none'], (err, data) => {
-				assert.strictEqual(err, null);
-				assert.ok(Array.isArray(data));
-				data.forEach((scope) => {
-					assert.ok(scope.scopeDef);
-					assert.ok(scope.scopeItem);
-				});
-				done();
+		it('should set and return device scopes as array', async () => {
+			const data = await invoke(cam.setScopes.bind(cam), ['onvif://www.onvif.org/none']);
+			expect(Array.isArray(data)).toBe(true);
+			data.forEach((scope) => {
+				expect(scope.scopeDef).toBeTruthy();
+				expect(scope.scopeItem).toBeTruthy();
 			});
 		});
+
 		if (synthTest) {
-			it('should return an error when SetScopes message returns error', (done) => {
-				serverMockup.conf.bad = true;
-				cam.setScopes(['onvif://www.onvif.org/none'], (err) => {
-					assert.notStrictEqual(err, null);
-					delete serverMockup.conf.bad;
-					done();
-				});
+			it('should return an error when SetScopes message returns error', async () => {
+				mockServer.conf.bad = true;
+				await expect(invoke(cam.setScopes.bind(cam), ['onvif://www.onvif.org/none'])).rejects.toBeTruthy();
+				delete mockServer.conf.bad;
 			});
 		}
 	});
 
 	describe('getCapabilities', () => {
-		it('should return a capabilities object with correspondent properties and also set them into #capability property', (done) => {
-			cam.getCapabilities((err, data) => {
-				assert.strictEqual(err, null);
-				assert.ok(cam.profiles.every((profile) =>
-					['name', 'videoSourceConfiguration', 'videoEncoderConfiguration', 'PTZConfiguration']
-						.every((prop) => profile[prop])));
-				assert.strictEqual(cam.capabilities, data);
-				done();
-			});
+		it('should return a capabilities object with correspondent properties and also set them into #capability property', async () => {
+			const data = await invoke(cam.getCapabilities.bind(cam));
+			expect(
+				cam.profiles.every((profile) =>
+					['name', 'videoSourceConfiguration', 'videoEncoderConfiguration', 'PTZConfiguration'].every(
+						(prop) => profile[prop],
+					),
+				),
+			).toBe(true);
+			expect(cam.capabilities).toBe(data);
 		});
-		it('should store PTZ link in ptzUri property', (done) => {
-			assert.strictEqual(cam.uri.ptz.href, cam.capabilities.PTZ.XAddr);
-			done();
+
+		it('should store PTZ link in ptzUri property', () => {
+			expect(cam.uri.ptz.href).toBe(cam.capabilities.PTZ.XAddr);
 		});
-		it('should store uri links for extensions', (done) => {
-			assert.ok(Object.keys(cam.capabilities.extension).every((ext) => cam.uri[ext]));
-			done();
+
+		it('should store uri links for extensions', () => {
+			expect(Object.keys(cam.capabilities.extension).every((ext) => cam.uri[ext])).toBe(true);
 		});
 	});
 
 	describe('getServiceCapabilities', () => {
-		it('should return a service capabilities object and also set them into #serviceCapabilities property', (done) => {
-			cam.getServiceCapabilities((err, data) => {
-				assert.strictEqual(err, null);
-				if (synthTest) {
-					assert.ok(['network', 'security', 'system', 'auxiliaryCommands'].every((prop) => data[prop]));
-				} else {
-					assert.ok(['network', 'security', 'system'].every((prop) => data[prop]));
-				}
-				assert.strictEqual(cam.serviceCapabilities, data);
-				done();
-			});
+		it('should return a service capabilities object and also set them into #serviceCapabilities property', async () => {
+			const data = await invoke(cam.getServiceCapabilities.bind(cam));
+			if (synthTest) {
+				expect(['network', 'security', 'system', 'auxiliaryCommands'].every((prop) => data[prop])).toBe(true);
+			} else {
+				expect(['network', 'security', 'system'].every((prop) => data[prop])).toBe(true);
+			}
+			expect(cam.serviceCapabilities).toBe(data);
 		});
 	});
 
 	describe('getActiveSources', () => {
 		it('should find at least one appropriate source', () => {
 			cam.getActiveSources();
-			assert.ok(cam.defaultProfile);
-			assert.ok(cam.activeSource);
+			expect(cam.defaultProfile).toBeTruthy();
+			expect(cam.activeSource).toBeTruthy();
 		});
+
 		it('should throws an error when no one profile has actual videosource token', () => {
 			const realProfiles = cam.profiles;
-			cam.profiles.forEach((profile) => profile.videoSourceConfiguration.sourceToken = 'crap');
-			assert.throws(cam.getActiveSources, Error);
+			cam.profiles.forEach((profile) => {
+				profile.videoSourceConfiguration.sourceToken = 'crap';
+			});
+			expect(() => cam.getActiveSources()).toThrow(Error);
 			cam.profiles = realProfiles;
 		});
-		// I can't remember and understand why it is here :)
-		// ###it 'should populate activeSources and defaultProfiles when more than one video source exists', () ->
-		// 	fs.rename './serverMockup/GetVideoSources.xml', './serverMockup/GetVideoSources.single', (err) ->
-		// 	assert.equal err, null
-		// fs.rename './serverMockup/GetVideoSourcesEncoder.xml', './serverMockup/GetVideoSources.xml', (err) ->
-		// 	assert.equal err, null
-		// cam.getActiveSources()
-		// assert.isArray(cam.activeSources)
-		// assert.isArray(cam.defaultProfiles)
-		//
-		// fs.rename './serverMockup/GetVideoSources.xml', './serverMockup/GetVideoSourcesEncoder.xml', (err) ->
-		// 	assert.equal err, null
-		// fs.rename './serverMockup/GetVideoSources.single', './serverMockup/GetVideoSources.xml', (err) ->
-		// 	assert.equal err, null###
 	});
 
 	describe('getVideoSources', () => {
-		it('should return a videosources object with correspondent properties and also set them into videoSources property', (done) => {
-			cam.getVideoSources((err, data) => {
-				assert.strictEqual(err, null);
-				assert.ok(Array.isArray(data));
-				data.every((d) => {
-					assert.ok(['$', 'framerate', 'resolution'].every((prop) => d[prop] !== undefined));
-					assert.strictEqual(cam.videoSources, data);
-				});
-				done();
+		it('should return a videosources object with correspondent properties and also set them into videoSources property', async () => {
+			const data = await invoke(cam.getVideoSources.bind(cam));
+			expect(Array.isArray(data)).toBe(true);
+			data.forEach((d) => {
+				expect(['$', 'framerate', 'resolution'].every((prop) => d[prop] !== undefined)).toBe(true);
 			});
+			expect(cam.videoSources).toBe(data);
 		});
 	});
 
 	describe('getServices', () => {
-		it('should return an array of services objects', (done) => {
-			cam.getServices(true, (err, data) => {
-				assert.strictEqual(err, null);
-				assert.ok(Array.isArray(data));
-				assert.ok(data.every((service) => service.namespace && service.XAddr && service.version));
-				done();
-			});
+		it('should return an array of services objects', async () => {
+			const data = await invoke(cam.getServices.bind(cam), true);
+			expect(Array.isArray(data)).toBe(true);
+			expect(data.every((service) => service.namespace && service.XAddr && service.version)).toBe(true);
 		});
 	});
 
 	describe('getDeviceInformation', () => {
-		it('should return an information about device', (done) => {
-			cam.getDeviceInformation((err, data) => {
-				assert.strictEqual(err, null);
-				assert.ok(['manufacturer', 'model', 'firmwareVersion', 'serialNumber', 'hardwareId']
-					.every((prop) =>	data[prop] !== undefined));
-				console.log('Device Information:', data);
-				assert.strictEqual(cam.deviceInformation, data);
-				done();
-			});
+		it('should return an information about device', async () => {
+			const data = await invoke(cam.getDeviceInformation.bind(cam));
+			expect(
+				['manufacturer', 'model', 'firmwareVersion', 'serialNumber', 'hardwareId'].every(
+					(prop) => data[prop] !== undefined,
+				),
+			).toBe(true);
+			expect(cam.deviceInformation).toBe(data);
 		});
 	});
 
 	describe('getStreamUri', () => {
-		it('should return a media stream uri', (done) => {
-			cam.getStreamUri({protocol: 'HTTP'}, (err, data) => {
-				assert.strictEqual(err, null);
-				assert.ok(['uri', 'invalidAfterConnect', 'invalidAfterReboot', 'timeout'].every((prop) => data[prop] !== undefined));
-				done();
-			});
+		it('should return a media stream uri', async () => {
+			const data = await invoke(cam.getStreamUri.bind(cam), { protocol: 'HTTP' });
+			expect(['uri', 'invalidAfterConnect', 'invalidAfterReboot', 'timeout'].every((prop) => data[prop] !== undefined)).toBe(true);
 		});
-		it('should return a default media stream uri with no options passed', (done) => {
-			cam.getStreamUri((err, data) => {
-				assert.strictEqual(err, null);
-				assert.ok(['uri', 'invalidAfterConnect', 'invalidAfterReboot', 'timeout'].every((prop) => data[prop] !== undefined));
-				done();
-			});
+
+		it('should return a default media stream uri with no options passed', async () => {
+			const data = await invoke(cam.getStreamUri.bind(cam));
+			expect(['uri', 'invalidAfterConnect', 'invalidAfterReboot', 'timeout'].every((prop) => data[prop] !== undefined)).toBe(true);
 		});
 	});
 
 	describe('getSnapshotUri', () => {
-		it('should return a default media uri with no options passed', (done) => {
-			cam.getSnapshotUri((err, data) => {
-				assert.strictEqual(err, null);
-				assert.ok(['uri', 'invalidAfterConnect', 'invalidAfterReboot', 'timeout'].every((prop) => data[prop] !== undefined));
-				done();
-			});
+		it('should return a default media uri with no options passed', async () => {
+			const data = await invoke(cam.getSnapshotUri.bind(cam));
+			expect(['uri', 'invalidAfterConnect', 'invalidAfterReboot', 'timeout'].every((prop) => data[prop] !== undefined)).toBe(true);
 		});
 	});
 
 	describe('getNodes', () => {
-		it('should return object of nodes and sets them to #nodes', (done) => {
-			cam.getNodes((err, data) => {
-				assert.strictEqual(err, null);
-				assert.ok(typeof data == 'object');
-				assert.deepStrictEqual(cam.nodes, data);
-				done();
-			});
+		it('should return object of nodes and sets them to #nodes', async () => {
+			const data = await invoke(cam.getNodes.bind(cam));
+			expect(typeof data).toBe('object');
+			expect(cam.nodes).toEqual(data);
 		});
 	});
 
 	describe('getConfigurations', () => {
-		it('should return object of configurations and sets them to #configurations', (done) => {
-			cam.getConfigurations((err, data) => {
-				assert.strictEqual(err, null);
-				assert.ok(typeof data == 'object');
-				assert.deepStrictEqual(cam.configurations, data);
-				done();
-			});
+		it('should return object of configurations and sets them to #configurations', async () => {
+			const data = await invoke(cam.getConfigurations.bind(cam));
+			expect(typeof data).toBe('object');
+			expect(cam.configurations).toEqual(data);
 		});
 	});
 
 	describe('getConfigurationOptions', () => {
-		it('should return an options object for every configuration token', (done) => {
+		it('should return an options object for every configuration token', async () => {
 			const tokens = Object.keys(cam.configurations);
-			let cou = tokens.length;
-			tokens.forEach((token) => {
-				cam.getConfigurationOptions(token, (err, data) => {
-					assert.strictEqual(err, null);
-					assert.ok(typeof data == 'object');
-					if (!--cou) {
-						done();
-					}
-				});
-			});
+			await Promise.all(
+				tokens.map(async (token) => {
+					const data = await invoke(cam.getConfigurationOptions.bind(cam), token);
+					expect(typeof data).toBe('object');
+				}),
+			);
 		});
 	});
 
 	describe('systemReboot', () => {
 		if (synthTest) {
-			it('should return a server message', (done) => {
-				cam.systemReboot((err, data) => {
-					assert.strictEqual(err, null);
-					assert.strictEqual(typeof data, 'string');
-					done();
-				});
+			it('should return a server message', async () => {
+				const data = await invoke(cam.systemReboot.bind(cam));
+				expect(typeof data).toBe('string');
 			});
 		}
 	});
@@ -449,91 +371,63 @@ describe('Common functions', () => {
 		let onEvent = null;
 		let eventNbr = 0;
 
-		it('should listen with `addListener`', (done) => {
-			cam.removeAllListeners(); // Remove all listeners in case some remains
+		it('should listen with `addListener`', async () => {
+			cam.removeAllListeners();
 			eventNbr = 0;
-			onEvent = () => eventNbr += 1;
+			onEvent = () => {
+				eventNbr += 1;
+			};
 			cam.addListener('myEvent', onEvent);
-			const listeners = cam.listeners('myEvent');
-			assert.strictEqual(listeners.length, 1);
-			const listenerCount = cam.listenerCount('myEvent');
-			assert.strictEqual(listenerCount, 1);
+			expect(cam.listeners('myEvent')).toHaveLength(1);
+			expect(cam.listenerCount('myEvent')).toBe(1);
 			setTimeout(() => cam.emit('myEvent', ''), 250);
-			setTimeout(() => {
-				assert.ok(eventNbr > 0);
-				done();
-			}, 1000);
+			await sleep(1000);
+			expect(eventNbr).toBeGreaterThan(0);
 		});
-		it('should stop listening with `removeListener`', (done) => {
+
+		it('should stop listening with `removeListener`', async () => {
 			eventNbr = 0;
 			cam.removeListener('myEvent', onEvent);
-			const listeners = cam.listeners('myEvent');
-			assert.strictEqual(listeners.length, 0);
-			const listenerCount = cam.listenerCount('myEvent');
-			assert.strictEqual(listenerCount, 0);
+			expect(cam.listeners('myEvent')).toHaveLength(0);
+			expect(cam.listenerCount('myEvent')).toBe(0);
 			setTimeout(() => cam.emit('myEvent', ''), 250);
-			setTimeout(() => {
-				assert.ok(eventNbr === 0);
-				done();
-			}, 500);
+			await sleep(500);
+			expect(eventNbr).toBe(0);
 		});
-		it('should listen with `on`', (done) => {
-			cam.removeAllListeners(); // Remove all listeners in case some remains
+
+		it('should listen with `on`', async () => {
+			cam.removeAllListeners();
 			eventNbr = 0;
-			onEvent = () => eventNbr += 1;
+			onEvent = () => {
+				eventNbr += 1;
+			};
 			cam.on('myEvent', onEvent);
-			const listeners = cam.listeners('myEvent');
-			assert.strictEqual(listeners.length, 1);
-			const listenerCount = cam.listenerCount('myEvent');
-			assert.equal(listenerCount, 1);
+			expect(cam.listeners('myEvent')).toHaveLength(1);
+			expect(cam.listenerCount('myEvent')).toBe(1);
 			setTimeout(() => cam.emit('myEvent', ''), 250);
-			setTimeout(() => {
-				assert.ok(eventNbr > 0);
-				done();
-			}, 500);
+			await sleep(500);
+			expect(eventNbr).toBeGreaterThan(0);
 		});
-		// Another strange part
-		// # it 'should stop listening with `off`', (done) ->
-		// 	#   eventNbr = 0
-		// #   cam.off 'myEvent', onEvent
-		// #   # cam.removeListener 'myEvent', onEvent
-		// #   listeners = cam.listeners 'myEvent'
-		// #   assert.equal listeners.length, 0
-		// #   listenerCount = cam.listenerCount 'myEvent'
-		// #   assert.equal listenerCount, 0
-		// #   setTimeout () ->
-		// #     cam.emit 'myEvent', ''
-		// #   , 250
-		// #   setTimeout () ->
-		// #     assert.ok eventNbr == 0
-		// #     done()
-		// #   , 500
-		it('should listen only once with `once`', (done) => {
-			cam.removeAllListeners('myEvent'); // Remove all listeners in case some remains
+
+		it('should listen only once with `once`', async () => {
+			cam.removeAllListeners('myEvent');
+			await sleep(100);
+			eventNbr = 0;
+			onEvent = () => {
+				eventNbr += 1;
+			};
+			cam.once('myEvent', onEvent);
+			expect(cam.listeners('myEvent')).toHaveLength(1);
+			expect(cam.listenerCount('myEvent')).toBe(1);
+			const emit = () => cam.emit('myEvent', '');
 			setTimeout(() => {
-				eventNbr = 0;
-				onEvent = () => eventNbr += 1;
-				cam.once('myEvent', onEvent);
-				let listeners = cam.listeners('myEvent');
-				assert.strictEqual(listeners.length, 1);
-				let listenerCount = cam.listenerCount('myEvent');
-				assert.strictEqual(listenerCount, 1);
-				const emit = () => cam.emit('myEvent', '');
-				setTimeout(() => {
-					setImmediate(emit); // Send twice
-					setImmediate(emit);
-				}, 100);
-				setTimeout(() => {
-					assert.ok(eventNbr === 1);
-					listeners = cam.listeners('myEvent');
-					assert.strictEqual(listeners.length, 0);
-					listenerCount = cam.listenerCount('myEvent');
-					assert.strictEqual(listenerCount, 0);
-					done();
-				}, 500);
-			}
-			, 100);
+				setImmediate(emit);
+				setImmediate(emit);
+			}, 100);
+			await sleep(500);
+			expect(eventNbr).toBe(1);
+			expect(cam.listeners('myEvent')).toHaveLength(0);
+			expect(cam.listenerCount('myEvent')).toBe(0);
 		});
 	});
 });
-

@@ -3,9 +3,9 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
 	envDir: './test',
 	test: {
-		globals: true,
+		globals: false,
 		include: ['test/**/*.js'],
-		exclude: ['test/serverMockup.cjs', 'test/vitest.setup.js'],
+		exclude: ['test/serverMockup.cjs', 'test/vitest.setup.js', 'test/helpers.js'],
 		testTimeout: 10_000,
 		hookTimeout: 10_000,
 		// Serial run + shared process so the HTTP mock on :10101 stays up for all files.

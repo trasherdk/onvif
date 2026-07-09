@@ -1,80 +1,56 @@
-import assert from 'assert';
-import * as onvif from '../src/onvif.ts';
+import { describe, it, beforeAll, expect } from 'vitest';
+import { createCam, invoke, onvif } from './helpers.js';
 
 describe('Imaging', () => {
-	let cam = null;
-	before((done) => {
-		const options = {
-			hostname: process.env.HOSTNAME || 'localhost',
-			username: process.env.USERNAME || 'admin',
-			password: process.env.PASSWORD || '9999',
-			port: process.env.PORT ? parseInt(process.env.PORT) : 10101,
-		};
-		cam = new onvif.Cam(options, done);
-	});
-
+	/** @type {import('../src/onvif.ts').Cam} */
+	let cam;
 	let settings = null;
 	let presetToken = null;
 
-	it('should request imaging settings with options object', (done) => {
-		cam.getImagingSettings({}, (err, res) => {
-			assert.strictEqual(err, null);
-			assert.ok(['brightness', 'colorSaturation', 'contrast', 'focus', 'sharpness'].every((prop) => res[prop]));
-			settings = res;
-			done();
-		});
+	beforeAll(async () => {
+		cam = await createCam();
 	});
-	it('should do the same without options object', (done) => {
-		cam.getImagingSettings((err, res) => {
-			assert.strictEqual(err, null);
-			assert.ok(['brightness', 'colorSaturation', 'contrast', 'focus', 'sharpness'].every((prop) => res[prop]));
-			done();
-		});
+
+	it('should request imaging settings with options object', async () => {
+		settings = await invoke(cam.getImagingSettings.bind(cam), {});
+		expect(['brightness', 'colorSaturation', 'contrast', 'focus', 'sharpness'].every((prop) => settings[prop])).toBe(true);
 	});
-	it('should set imaging configuration', (done) => {
+
+	it('should do the same without options object', async () => {
+		const res = await invoke(cam.getImagingSettings.bind(cam));
+		expect(['brightness', 'colorSaturation', 'contrast', 'focus', 'sharpness'].every((prop) => res[prop])).toBe(true);
+	});
+
+	it('should set imaging configuration', async () => {
 		if (settings === null) {
-			throw 'getImagingSettings failed';
+			throw new Error('getImagingSettings failed');
 		}
-		cam.setImagingSettings(settings, (err, res) => {
-			assert.strictEqual(err, null);
-			assert.strictEqual(res, '');
-			done();
-		});
+		const res = await invoke(cam.setImagingSettings.bind(cam), settings);
+		expect(res).toBe('');
 	});
-	it('should get imaging service capabilities', (done) => {
-		cam.getImagingServiceCapabilities((err, res) => {
-			assert.strictEqual(err, null);
-			assert.strictEqual(typeof res.ImageStabilization, 'boolean');
-			done();
-		});
+
+	it('should get imaging service capabilities', async () => {
+		const res = await invoke(cam.getImagingServiceCapabilities.bind(cam));
+		expect(typeof res.ImageStabilization).toBe('boolean');
 	});
-	it('should get current preset when no video source token present', (done) => {
-		cam.getCurrentImagingPreset((err, res) => {
-			assert.strictEqual(err, null);
-			assert.ok(['token', 'type', 'name'].every((prop) => res[prop]));
-			done();
-		});
+
+	it('should get current preset when no video source token present', async () => {
+		const res = await invoke(cam.getCurrentImagingPreset.bind(cam));
+		expect(['token', 'type', 'name'].every((prop) => res[prop])).toBe(true);
 	});
-	it('should get current preset with video source token', (done) => {
-		cam.getCurrentImagingPreset(cam.activeSource.sourceToken, (err, res) => {
-			assert.strictEqual(err, null);
-			assert.ok(['token', 'type', 'name'].every((prop) => res[prop]));
-			presetToken = res.token;
-			done();
-		});
+
+	it('should get current preset with video source token', async () => {
+		const res = await invoke(cam.getCurrentImagingPreset.bind(cam), cam.activeSource.sourceToken);
+		expect(['token', 'type', 'name'].every((prop) => res[prop])).toBe(true);
+		presetToken = res.token;
 	});
-	it('should set current preset with video source and imaging preset tokens', (done) => {
-		cam.setCurrentImagingPreset({presetToken}, (err, res) => {
-			assert.strictEqual(err, null);
-			['token', 'type', 'name'].every((prop) => res[prop]);
-			done();
-		});
+
+	it('should set current preset with video source and imaging preset tokens', async () => {
+		await invoke(cam.setCurrentImagingPreset.bind(cam), { presetToken });
 	});
-	it('should get Options from the imaging API with video source tokens', (done) => {
-		cam.getVideoSourceOptions({token: cam.activeSource.sourceToken}, (err, res) => {
-			assert.strictEqual(err, null);
-			assert.ok(['brightness', 'colorSaturation', 'contrast'].every((prop) => res[prop]));
-			done();
-		});
+
+	it('should get Options from the imaging API with video source tokens', async () => {
+		const res = await invoke(cam.getVideoSourceOptions.bind(cam), { token: cam.activeSource.sourceToken });
+		expect(['brightness', 'colorSaturation', 'contrast'].every((prop) => res[prop])).toBe(true);
 	});
 });
