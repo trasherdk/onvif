@@ -4,19 +4,15 @@
  * Usage: node scripts/smoke-examples.js
  */
 import { spawn } from 'node:child_process';
-import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { close } from '../test/serverMockup.js';
 
-const require = createRequire(import.meta.url);
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-
-require(path.join(root, 'test/serverMockup.cjs'));
 
 const baseEnv = {
 	...process.env,
 	CAMERA_HOST: 'localhost',
-	HOSTNAME: 'localhost',
 	PORT: '10101',
 	USERNAME: 'admin',
 	PASSWORD: '9999',
@@ -83,7 +79,7 @@ results.push(r5);
 console.log(r5.ok ? 'OK' : `FAIL (exit ${r5.code})`);
 if (!r5.ok) console.log(r5.out.slice(-300));
 
-require(path.join(root, 'test/serverMockup.cjs')).close();
+close();
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);

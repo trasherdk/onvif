@@ -22,16 +22,6 @@
   "files": [
     "dist"
   ],
-  "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "jsdoc": "jsdoc ./dist/*.js --readme ./README.md --destination ./docs/api",
-    "lint": "eslint src/**/*.ts",
-    "test": "pnpm build && vitest run",
-    "coverage": "eslint src/**/*.ts && pnpm build && vitest run --coverage",
-    "test:watch": "vitest",
-    "examples:smoke": "pnpm build && node scripts/smoke-examples.js",
-    "mockserver": "node startServerMockup.cjs"
-  },
   "contributors": [
     {
       "name": "Andrew D.Laptev",
@@ -58,9 +48,6 @@
     "type": "git",
     "url": "https://github.com/agsh/onvif.git"
   },
-  "dependencies": {
-    "xml2js": "^0.6.2"
-  },
   "keywords": [
     "onvif",
     "video",
@@ -71,6 +58,16 @@
   "license": "MIT",
   "engines": {
     "node": ">=18.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "jsdoc": "jsdoc ./dist/*.js --readme ./README.md --destination ./docs/api",
+    "lint": "eslint src/**/*.ts",
+    "test": "pnpm build && vitest run",
+    "coverage": "eslint src/**/*.ts && pnpm build && vitest run --coverage",
+    "test:watch": "vitest",
+    "examples:smoke": "pnpm build && node scripts/smoke-examples.js",
+    "mockserver": "node startServerMockup.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -89,5 +86,8 @@
     "typescript-eslint": "^8.62.1",
     "vite": "^8.1.3",
     "vitest": "^4.1.9"
+  },
+  "dependencies": {
+    "xml2js": "^0.6.2"
   }
 }

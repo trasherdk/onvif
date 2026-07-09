@@ -1,7 +1,4 @@
-import { createRequire } from 'node:module';
 import * as onvif from '../src/onvif.ts';
-
-const require = createRequire(import.meta.url);
 
 /**
  * Camera hostname for integration tests.
@@ -14,8 +11,8 @@ export function deviceHostname() {
 
 export const synthTest = !deviceHostname();
 
-/** @type {import('./serverMockup.cjs') | null} */
-export const mockServer = synthTest ? require('./serverMockup.cjs') : null;
+/** @type {typeof import('./serverMockup.js') | null} */
+export const mockServer = synthTest ? await import('./serverMockup.js') : null;
 
 export const camOptions = {
 	hostname: deviceHostname() || 'localhost',
