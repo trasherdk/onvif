@@ -20,7 +20,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "promises"
   ],
   "contributors": [
     {
@@ -67,6 +68,8 @@
     "coverage": "eslint src/**/*.ts && pnpm build && vitest run --coverage",
     "test:watch": "vitest",
     "examples:smoke": "pnpm build && node scripts/smoke-examples.js",
+    "example:app": "pnpm --dir example-app start",
+    "example:app:smoke": "pnpm build && node scripts/smoke-example-app.js",
     "mockserver": "node startServerMockup.js"
   },
   "devDependencies": {

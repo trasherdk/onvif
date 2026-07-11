@@ -1,0 +1,19 @@
+{
+  "name": "onvif-example-app",
+  "private": true,
+  "type": "module",
+  "description": "Mini PTZ + RTSP viewer (README quick example)",
+  "scripts": {
+    "prestart": "pnpm --dir .. build",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "onvif": "file:..",
+    "rtsp-ffmpeg": "^0.0.17",
+    "socket.io": "^4.8.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

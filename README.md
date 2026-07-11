@@ -47,50 +47,18 @@ Camera conformance notes, buying guide, and packet-capture analysis live under [
 
 ## Quick example
 
-Special teasing example how to create little funny video server (http://localhost:6147) with 1 ffmpeg and 3 node.js libraries:
+[`example-app/`](./example-app/) — live RTSP viewer in the browser with PTZ controls (arrow keys / on-screen buttons). ffmpeg pulls the stream; Socket.IO pushes JPEG frames to a canvas; ONVIF `continuousMove` / `stop` drive the camera.
+
 <video src="https://github.com/agsh/onvif/assets/576263/e816fed6-067a-4f77-b3f5-ccd9d5ff1310" width="300" />
 
 ```shell
 sudo apt install ffmpeg
-npm install onvif socket.io rtsp-ffmpeg
+pnpm install --dir example-app
+pnpm --dir example-app start
+# open http://localhost:6147
 ```
 
-```js
-const server = require('http').createServer((req, res) =>
-        res.end(`
-<!DOCTYPE html><body>
-<canvas width='640' height='480' />
-<script src="/socket.io/socket.io.js"></script><script>
-  const socket = io(), ctx = document.getElementsByTagName('canvas')[0].getContext('2d');
-  socket.on('data', (data) => {
-    const img = new Image;    
-    const url = URL.createObjectURL(new Blob([new Uint8Array(data)], {type: 'application/octet-binary'}));
-    img.onload = () => {
-      URL.revokeObjectURL(url, {type: 'application/octet-binary'});
-      ctx.drawImage(img, 100, 100);
-    };
-    img.src = url;
-  });
-</script></body></html>`));
-const { Cam } = require('onvif/promises'), io = require('socket.io')(server), rtsp = require('rtsp-ffmpeg');
-server.listen(6147);
-
-const cam = new Cam({username: 'username', password: 'password', hostname: '192.168.0.116', port: 2020});
-(async() => {
-  await cam.connect();
-  const input = (await cam.getStreamUri({protocol:'RTSP'})).uri.replace('://', `://${cam.username}:${cam.password}@`);
-  const stream = new rtsp.FFMpeg({input, resolution: '320x240', quality: 3});
-  io.on('connection', (socket) => {
-    const pipeStream = socket.emit.bind(socket, 'data');
-    stream.on('disconnect', () => stream.removeListener('data', pipeStream)).on('data', pipeStream);
-  });
-  setInterval(() => cam.absoluteMove({
-    x: Math.random() * 2 - 1,
-    y: Math.random() * 2 - 1,
-    zoom: Math.random()
-  }), 3000);
-})().catch(console.error);
-```
+Set `CAMERA_HOST`, `USERNAME`, `PASSWORD`, and `PORT` in `.env` (see `.env.example`).
 
 ## Other examples (located in the Examples Folder on the Github)
 * [example.js](https://github.com/agsh/onvif/blob/master/examples/example.js) - Move camera to a pre-defined position then server the RTSP URL up via a HTTP Server. Click on the RTSP address in a browser to open the video (if you have the VLC plugin installed)
