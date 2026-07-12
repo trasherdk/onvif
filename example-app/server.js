@@ -1,19 +1,20 @@
 import http from 'node:http';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Cam } from 'onvif/promises';
 import { Server } from 'socket.io';
 import rtsp from 'rtsp-ffmpeg';
 import dotenv from 'dotenv';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { createServer as createViteServer } from 'vite';
 import {
-	buildPageHtml,
 	formatConnectError,
 	logPtzError,
 	readCameraTarget,
 	streamFrameSize,
 } from './lib.js';
 
-dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.env') });
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const { USERNAME, PASSWORD, PORT } = process.env;
 const HTTP_PORT = Number(process.env.HTTP_PORT || 6147);
@@ -38,15 +39,19 @@ const cam = new Cam({
 	port: PORT ? parseInt(PORT, 10) : undefined,
 });
 
-let pageHtml;
-
 try {
 	await cam.connect();
 	console.log(`Connected to ${cameraTarget.hostname}:${cameraTarget.port}`);
 
 	const frame = streamFrameSize(cam, STREAM_MAX_WIDTH);
 	console.log(`Stream ${frame.source.width}×${frame.source.height} → preview ${frame.width}×${frame.height}`);
-	pageHtml = buildPageHtml(frame, PTZ_SPEED);
+
+	const pageConfig = {
+		width: frame.width,
+		height: frame.height,
+		source: frame.source,
+		ptzSpeed: PTZ_SPEED,
+	};
 
 	const { uri } = await cam.getStreamUri({ protocol: 'RTSP' });
 	console.log(`RTSP: ${uri}`);
@@ -57,14 +62,33 @@ try {
 		quality: 3,
 	});
 
-	const server = http.createServer((_req, res) => {
-		res.end(pageHtml);
+	const server = http.createServer();
+
+	const vite = await createViteServer({
+		configFile: path.join(__dirname, 'vite.config.js'),
+		server: {
+			middlewareMode: true,
+			ws: { server },
+		},
+		appType: 'spa',
+	});
+
+	server.on('request', (req, res) => {
+		if (req.url?.startsWith('/api/config')) {
+			res.setHeader('Content-Type', 'application/json');
+			res.end(JSON.stringify(pageConfig));
+			return;
+		}
+		vite.middlewares(req, res, () => {
+			res.statusCode = 404;
+			res.end('Not found');
+		});
 	});
 
 	const io = new Server(server);
 
 	server.listen(HTTP_PORT, () => {
-		console.log(`Open http://localhost:${HTTP_PORT}`);
+		console.log(`Open http://localhost:${HTTP_PORT} (Vite HMR on)`);
 	});
 
 	io.on('connection', (socket) => {

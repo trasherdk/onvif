@@ -47,14 +47,23 @@ function waitFor(pattern, timeoutMs = 15000) {
 
 try {
 	await waitFor(/Open http:\/\/localhost:6149/);
-	const res = await fetch(`http://localhost:${HTTP_PORT}/`);
-	if (!res.ok) throw new Error(`HTTP ${res.status}`);
-	const html = await res.text();
-	if (!html.includes('socket.io') || !html.includes('canvas')) {
+	await waitFor(/Connected to localhost:10101/);
+
+	const page = await fetch(`http://localhost:${HTTP_PORT}/`);
+	if (!page.ok) throw new Error(`HTTP ${page.status}`);
+	const html = await page.text();
+	if (!html.includes('canvas') || !html.includes('/main.js')) {
 		throw new Error('Unexpected HTML from example-app');
 	}
-	await waitFor(/Connected to localhost:10101/);
-	console.log('example-app smoke: OK (HTTP UI + ONVIF connect against mock)');
+
+	const configRes = await fetch(`http://localhost:${HTTP_PORT}/api/config`);
+	if (!configRes.ok) throw new Error(`config HTTP ${configRes.status}`);
+	const config = await configRes.json();
+	if (!config.width || !config.height || !config.ptzSpeed) {
+		throw new Error(`Unexpected config: ${JSON.stringify(config)}`);
+	}
+
+	console.log('example-app smoke: OK (HTTP UI + Vite + ONVIF connect against mock)');
 } catch (err) {
 	console.error('example-app smoke: FAIL');
 	console.error(err.message || err);

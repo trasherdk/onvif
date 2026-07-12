@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ONVIF viewer</title>
+</head>
+<body>
+  <main class="layout">
+    <div id="stage" class="stage">
+      <canvas id="view"></canvas>
+    </div>
+    <p id="meta" class="hint"></p>
+    <div class="controls">
+      <div class="ptz" aria-label="PTZ controls">
+        <span class="spacer"></span>
+        <button type="button" data-dir="up" title="Up">▲</button>
+        <span class="spacer"></span>
+        <button type="button" data-dir="left" title="Left">◀</button>
+        <button type="button" data-stop title="Stop">■</button>
+        <button type="button" data-dir="right" title="Right">▶</button>
+        <span class="spacer"></span>
+        <button type="button" data-dir="down" title="Down">▼</button>
+        <span class="spacer"></span>
+      </div>
+      <div class="zoom" aria-label="Zoom">
+        <button type="button" data-dir="zoomin" title="Zoom in">+</button>
+        <button type="button" data-dir="zoomout" title="Zoom out">−</button>
+      </div>
+    </div>
+    <p class="hint">Arrow keys pan/tilt · + / − zoom · drag the preview corner to resize</p>
+  </main>
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

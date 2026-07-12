@@ -2,6 +2,8 @@
 
 Live RTSP viewer in the browser with on-screen and keyboard PTZ controls.
 
+The client lives under `client/` and is served through **Vite middleware** on the same port as Socket.IO, so editing `client/main.js` / `client/style.css` / `client/index.html` hot-reloads in the browser.
+
 ## Prerequisites
 
 - Node.js 18+
@@ -25,13 +27,13 @@ pnpm install
 pnpm start
 ```
 
-Open http://localhost:6147 (override with `HTTP_PORT`).
+Open http://localhost:6147 (override with `HTTP_PORT`). Edit files in `client/` — Vite HMR updates the page without a full server restart.
 
 ## PTZ controls
 
 - **Buttons** on the page: pan/tilt arrows, +/− zoom, ■ stop
 - **Keyboard**: arrow keys pan/tilt, `+` / `−` zoom (release key to stop)
-- Optional env: `PTZ_SPEED` (default `0.4`), `PTZ_MOVE_MS` (default `800`)
+- Optional env: `PTZ_SPEED` (default `0.4`), `PTZ_MOVE_MS` (default `800`), `STREAM_MAX_WIDTH` (default `640`)
 
 Uses `continuousMove` / `stop` over ONVIF; same idea as `examples/example3.js`.
 
@@ -43,4 +45,4 @@ Uses `continuousMove` / `stop` over ONVIF; same idea as `examples/example3.js`.
 - Override for a one-off test: `CAMERA_HOST=10.0.0.5 PORT=80 pnpm example:app`
 - Automated local test without a camera (ONVIF mock only, no RTSP video): `pnpm example:app:smoke` from the repo root.
 
-Stack: `onvif/promises`, `socket.io`, `rtsp-ffmpeg`.
+Stack: `onvif/promises`, `socket.io`, `rtsp-ffmpeg`, Vite (client HMR).

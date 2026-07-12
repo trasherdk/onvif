@@ -47,7 +47,7 @@ Camera conformance notes, buying guide, and packet-capture analysis live under [
 
 ## Quick example
 
-[`example-app/`](./example-app/) — live RTSP viewer in the browser with PTZ controls (arrow keys / on-screen buttons). ffmpeg pulls the stream; Socket.IO pushes JPEG frames to a canvas; ONVIF `continuousMove` / `stop` drive the camera.
+[`example-app/`](./example-app/) — live RTSP viewer in the browser with PTZ controls (arrow keys / on-screen buttons). ffmpeg pulls the stream; Socket.IO pushes JPEG frames to a canvas; ONVIF `continuousMove` / `stop` drive the camera. Client files under `example-app/client/` hot-reload via Vite.
 
 <video src="https://github.com/agsh/onvif/assets/576263/e816fed6-067a-4f77-b3f5-ccd9d5ff1310" width="300" />
 

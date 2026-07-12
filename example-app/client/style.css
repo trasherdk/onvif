@@ -1,0 +1,93 @@
+* {
+	box-sizing: border-box;
+}
+
+body {
+	font-family: system-ui, sans-serif;
+	margin: 0;
+	min-height: 100vh;
+	background: #f4f4f5;
+	color: #18181b;
+}
+
+.layout {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.75rem;
+	min-height: 100vh;
+	padding: 1.25rem;
+}
+
+.stage {
+	position: relative;
+	width: min(100%, var(--preview-width, 640px));
+	max-width: 100%;
+	min-width: 240px;
+	aspect-ratio: var(--preview-aspect, 16 / 9);
+	resize: horizontal;
+	overflow: hidden;
+	background: #111;
+	border-radius: 4px;
+	box-shadow: 0 1px 3px rgb(0 0 0 / 18%);
+}
+
+#view {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+.controls {
+	display: flex;
+	align-items: flex-end;
+	gap: 0.75rem;
+}
+
+.ptz {
+	display: grid;
+	grid-template-columns: repeat(3, 1.75rem);
+	gap: 0.2rem;
+	width: max-content;
+}
+
+.zoom {
+	display: flex;
+	flex-direction: column;
+	gap: 0.2rem;
+}
+
+.ptz button,
+.zoom button {
+	width: 1.75rem;
+	height: 1.75rem;
+	padding: 0;
+	font-size: 0.7rem;
+	line-height: 1;
+	border: 1px solid #d4d4d8;
+	border-radius: 4px;
+	background: #fff;
+	cursor: pointer;
+}
+
+.ptz button:hover,
+.zoom button:hover {
+	background: #f4f4f5;
+}
+
+.ptz button:active,
+.zoom button:active {
+	background: #e4e4e7;
+}
+
+.ptz .spacer {
+	visibility: hidden;
+}
+
+.hint {
+	margin: 0;
+	color: #71717a;
+	font-size: 0.8rem;
+	text-align: center;
+}
